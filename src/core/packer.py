@@ -386,7 +386,11 @@ class Repacker:
         # 3. Copy firmware images
         if self.ctx.repack_images_dir.exists():
             for fw in self.ctx.repack_images_dir.glob("*.img"):
-                 shutil.copy2(fw, firmware_update)
+                 # Special handling for boot.img: place in root
+                 if fw.name == "boot.img":
+                     shutil.copy2(fw, out_path / "boot.img")
+                 else:
+                     shutil.copy2(fw, firmware_update)
         
         # 4. Copy tools and scripts
         flash_template = Path("bin/flash")
@@ -507,6 +511,13 @@ class Repacker:
     def _patch_update_binary_firmware(self, script_path, firmware_dir):
         """Inject firmware flashing commands into update-binary"""
         fw_files = [f.name for f in firmware_dir.glob("*")]
+        # Also check root for boot.img (as we moved it there)
+        root_dir = firmware_dir.parent
+        if (root_dir / "boot.img").exists():
+            # boot.img is handled statically in update-binary template now, 
+            # but we should ensure we don't double flash if it was somehow in firmware-update too
+            pass
+
         if not fw_files: return
         
         content = script_path.read_text(encoding='utf-8', errors='ignore')
@@ -524,6 +535,9 @@ class Repacker:
             
             # Skip dtbo/cust if needed (already handled or custom)
             if "dtbo" in fw or "cust" in fw: continue
+            
+            # Skip boot.img if it ended up here (should be in root)
+            if fw == "boot.img": continue
             
             # Generate shell command for update-binary
             # package_extract_file "firmware-update/fw.img" "/dev/block/bootdevice/by-name/part"
@@ -570,6 +584,9 @@ class Repacker:
             
             # Skip dtbo/cust if needed (port.sh line 1759)
             if "dtbo" in fw or "cust" in fw: continue
+            
+            # Skip boot.img (handled at root)
+            if fw == "boot.img": continue
 
             if self.ctx.is_ab_device:
                  if is_windows:
