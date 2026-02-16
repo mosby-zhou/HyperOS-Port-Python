@@ -423,6 +423,12 @@ class Repacker:
                          if not self.ctx.is_ab_device:
                              self._patch_script_for_a_only(dest_path)
                          self._patch_script_for_firmware(dest_path, firmware_update)
+                     
+                     # Specific handling for Recovery script
+                     if src_name == "update-binary":
+                         if not self.ctx.is_ab_device:
+                             self._patch_update_binary_for_a_only(dest_path)
+                         self._patch_update_binary_firmware(dest_path, firmware_update)
 
         # 5. Zip the package
         self.logger.info("Zipping hybrid package...")
@@ -461,22 +467,83 @@ class Repacker:
         file_path.write_text(content, encoding='utf-8')
 
     def _patch_script_for_a_only(self, script_path):
-        """Remove _a/_b references for A-only devices"""
+        """Remove _a/_b references for A-only devices (Fastboot)"""
         content = script_path.read_text(encoding='utf-8', errors='ignore')
         
         # Simple replacements
         content = content.replace("_a", "")
-        content = content.replace("_b", "") # Careful not to break other things, but usually safe for partition names
+        content = content.replace("_b", "") 
         
-        # Remove lines containing "_b" if it's a specific flash command?
-        # Shell script uses sed '/_b/d' which deletes lines with _b
         lines = content.splitlines()
         new_lines = [line for line in lines if "_b" not in line]
         
-        # Handle specific blocks (SET_ACTION_SLOT_A_BEGIN...)
-        # This requires more complex parsing or just simple line filtering
-        
         script_path.write_text("\n".join(new_lines), encoding='utf-8')
+
+    def _patch_update_binary_for_a_only(self, script_path):
+        """Patch update-binary for A-only devices (Recovery)"""
+        content = script_path.read_text(encoding='utf-8', errors='ignore')
+        
+        # 1. Replace partition names
+        # boot_a/boot_b -> boot
+        # dtbo_a/dtbo_b -> dtbo
+        content = content.replace("boot_a", "boot").replace("boot_b", "boot")
+        content = content.replace("dtbo_a", "dtbo").replace("dtbo_b", "dtbo")
+        
+        # 2. Remove A/B specific commands
+        # Remove bootctl set-active-boot-slot a
+        content = content.replace("bootctl set-active-boot-slot a", "")
+        
+        # 3. Remove/Comment out lptools unmap commands (usually for V-AB)
+        # The template has #REMAP_START / #REMAP_END blocks
+        # We can just remove lines containing "lptools unmap"
+        lines = content.splitlines()
+        new_lines = []
+        for line in lines:
+            if "lptools unmap" in line: continue
+            new_lines.append(line)
+            
+        script_path.write_text("\n".join(new_lines), encoding='utf-8')
+
+    def _patch_update_binary_firmware(self, script_path, firmware_dir):
+        """Inject firmware flashing commands into update-binary"""
+        fw_files = [f.name for f in firmware_dir.glob("*")]
+        if not fw_files: return
+        
+        content = script_path.read_text(encoding='utf-8', errors='ignore')
+        insertion = []
+        
+        for fw in fw_files:
+            # Map filename to partition name
+            part = fw.split('.')[0]
+            if fw == "uefi_sec.mbn": part = "uefisecapp"
+            elif fw == "qupv3fw.elf": part = "qupfw"
+            elif fw == "NON-HLOS.bin": part = "modem"
+            elif fw == "km4.mbn": part = "keymaster"
+            elif fw == "BTFM.bin": part = "bluetooth"
+            elif fw == "dspso.bin": part = "dsp"
+            
+            # Skip dtbo/cust if needed (already handled or custom)
+            if "dtbo" in fw or "cust" in fw: continue
+            
+            # Generate shell command for update-binary
+            # package_extract_file "firmware-update/fw.img" "/dev/block/bootdevice/by-name/part"
+            
+            if self.ctx.is_ab_device:
+                insertion.append(f'package_extract_file "firmware-update/{fw}" "/dev/block/bootdevice/by-name/{part}_a"')
+                insertion.append(f'package_extract_file "firmware-update/{fw}" "/dev/block/bootdevice/by-name/{part}_b"')
+            else:
+                 insertion.append(f'package_extract_file "firmware-update/{fw}" "/dev/block/bootdevice/by-name/{part}"')
+
+        # Insert after "# firmware" marker
+        marker = "# firmware"
+        if marker in content:
+            parts = content.split(marker)
+            new_content = parts[0] + marker + "\n" + "\n".join(insertion) + parts[1]
+            script_path.write_text(new_content, encoding='utf-8')
+        else:
+            # If marker not found, append before super flash?
+            # Or just warn. The template should have the marker.
+            self.logger.warning(f"Marker '{marker}' not found in update-binary, firmware flashing might be missing.")
 
     def _patch_script_for_firmware(self, script_path, firmware_dir):
         """Inject firmware flash commands"""
