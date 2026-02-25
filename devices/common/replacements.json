@@ -65,6 +65,13 @@
             "match_mode": "exact",
             "ensure_exists": true,
             "files": ["bootanimation.zip"]
+        },
+        {
+            "description": "OTA Certificate Sync",
+            "id": "ota_cert_sync",
+            "type": "unzip_override",
+            "source": "devices/common/ota_cert.zip",
+            "target": "."
         }
     ]
 }
