@@ -1,5 +1,6 @@
 {
     "product": {
-        "ro.miui.affinity.sfui": ""
+        "ro.miui.affinity.sfui": "",
+        "ro.miui.affinity.sfre": ""
     }
 }

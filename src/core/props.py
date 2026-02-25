@@ -38,13 +38,13 @@ class PropertyModifier:
 
         # 5. Reconstruct Hardware Props from Base
         self._reconstruct_props()
-
-        # 6. Apply Custom Props from props.json (New)
-        self._apply_custom_props()
         
         self._regenerate_fingerprint()
         
         self._optimize_core_affinity()
+
+        # 6. Apply Custom Props from props.json (Highest Priority)
+        self._apply_custom_props()
         
         self.logger.info("Build.prop modifications completed.")
 
@@ -59,19 +59,21 @@ class PropertyModifier:
         ]
         valid_paths = [p for p in paths if p.exists()]
         
+        self.logger.debug(f"Checking props.json in paths: {valid_paths}")
         config, report = self.merger.load_and_merge(valid_paths, "props.json")
         if not config:
+            self.logger.debug("No custom props.json found to apply.")
             return
 
-        self.logger.info("Applying custom properties from props.json...")
+        self.logger.info(f"Applying custom properties from: {', '.join(report.loaded_files)}")
         for partition, props in config.items():
             # Find the prop file for this partition
             prop_file = self.ctx.get_target_prop_file(partition)
-            if not prop_file or not prop_file.exists():
+            if not prop_file:
                 self.logger.warning(f"  Target prop file for partition '{partition}' not found.")
                 continue
 
-            self.logger.info(f"  Processing {partition} properties...")
+            self.logger.info(f"  Applying {len(props)} props to {partition} ({prop_file.relative_to(self.ctx.target_dir)})")
             for key, value in props.items():
                 self._update_or_append_prop(prop_file, key, value)
 
@@ -316,23 +318,40 @@ class PropertyModifier:
                 content = content.replace("persist.sys.millet.cgroup1", "#persist.sys.millet.cgroup1")
                 vendor_prop.write_text(content, encoding='utf-8')
 
-    def _update_or_append_prop(self, file_path: Path, key: str, value: str):
-        """Helper function: update or append property"""
+    def _update_or_append_prop(self, file_path: Path, key: str, value: str | None):
+        """
+        Helper function: update, append or delete property.
+        If value is None, the property will be removed.
+        """
         if not file_path.exists(): return
         
         content = file_path.read_text(encoding='utf-8', errors='ignore')
-        pattern = f"{re.escape(key)}=.*"
+        pattern = re.compile(f"^{re.escape(key)}=.*$", re.MULTILINE)
+        
+        match = pattern.search(content)
+        
+        if value is None:
+            if match:
+                self.logger.debug(f"[{file_path.name}] Delete: {key}")
+                new_content = pattern.sub("", content)
+                # Clean up potential double newlines
+                new_content = re.sub(r"\n\n+", "\n\n", new_content)
+                file_path.write_text(new_content.strip() + "\n", encoding='utf-8')
+            return
+
         replacement = f"{key}={value}"
         
-        match = re.search(pattern, content)
         if match:
             if match.group(0) != replacement:
                 self.logger.debug(f"[{file_path.name}] Update: {key} -> {value}")
-                new_content = re.sub(pattern, replacement, content)
+                new_content = pattern.sub(replacement, content)
                 file_path.write_text(new_content, encoding='utf-8')
         else:
             self.logger.debug(f"[{file_path.name}] Append: {key}={value}")
-            new_content = content + f"\n{replacement}\n"
+            # Ensure file ends with newline before appending
+            if content and not content.endswith("\n"):
+                content += "\n"
+            new_content = content + f"{replacement}\n"
             file_path.write_text(new_content, encoding='utf-8')
     
     def _regenerate_fingerprint(self):
