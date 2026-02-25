@@ -15,6 +15,8 @@ from urllib.error import URLError
 import subprocess
 
 from src.utils.smalikit import SmaliKit
+from src.core.config_merger import ConfigMerger
+from src.core.conditions import ConditionEvaluator, BuildContext
 
 class SmaliArgs:
     def __init__(self, **kwargs):
@@ -47,6 +49,56 @@ class SystemModifier:
         
         self.temp_dir = self.ctx.target_dir.parent / "temp"
 
+        self.merger = ConfigMerger(self.logger)
+        self.evaluator = ConditionEvaluator()
+
+    def _load_merged_config(self, filename):
+        """
+        Load and merge configuration from common, chipset and target layers.
+        """
+        # Hierarchy: common -> chipset -> target (Stock ROM Code)
+        paths = [
+            Path("devices/common"),
+            Path(f"devices/{getattr(self.ctx, 'base_chipset_family', 'unknown')}"),
+            Path(f"devices/{self.ctx.stock_rom_code}")
+        ]
+        
+        # Filter valid paths
+        valid_paths = [p for p in paths if p.exists() and p.is_dir()]
+        
+        config, report = self.merger.load_and_merge(valid_paths, filename)
+        
+        # Log summary
+        if report.loaded_files:
+            self.logger.info(f"Merged {filename} from: {', '.join(report.loaded_files)}")
+            
+        return config
+
+    def _get_build_context(self):
+        """Prepare build context for condition evaluation."""
+        from src.core.conditions import BuildContext as BaseBuildContext
+        ctx = BaseBuildContext()
+        
+        # Map PortingContext to BuildContext
+        ctx.port_android_version = int(self.ctx.port_android_version)
+        ctx.base_android_version = int(self.ctx.base_android_version)
+        ctx.base_device_code = self.ctx.stock_rom_code
+        
+        # HyperOS specific
+        ctx.is_port_eu_rom = getattr(self.ctx, "is_port_eu_rom", False)
+        
+        return ctx
+
+    def _evaluate_rule(self, rule):
+        """Evaluate if a rule's conditions are met."""
+        build_ctx = self._get_build_context()
+        passed, reason = self.evaluator.evaluate_with_reason(rule, build_ctx)
+        
+        if not passed:
+            self.logger.debug(f"Rule '{rule.get('description', 'unnamed')}' skipped: {reason}")
+            
+        return passed
+
     def run(self):
         self.logger.info("Starting System Modification...")
         
@@ -77,134 +129,200 @@ class SystemModifier:
         """
         Execute file/directory replacements defined in replacements.json.
         """
-        replacements = self._load_replacement_config()
+        config = self._load_merged_config("replacements.json")
+        replacements = config.get("replacements", [])
         if not replacements:
             return
 
-        self.logger.info("Processing file replacements...")
+        self.logger.info(f"Processing {len(replacements)} file replacements...")
         
         stock_root = self.ctx.stock.extracted_dir
         target_root = self.ctx.target_dir
 
         for rule in replacements:
-            desc = rule.get("description", "Unknown Rule")
-            rtype = rule.get("type", "file")
-            search_path = rule.get("search_path", "")
-            match_mode = rule.get("match_mode", "exact")
-            ensure_exists = rule.get("ensure_exists", False)
-            files = rule.get("files", [])
-
-            self.logger.info(f"Applying rule: {desc}")
-
-            # Define search roots
-            rule_stock_root = stock_root / search_path
-            rule_target_root = target_root / search_path
-
-            if not rule_stock_root.exists():
-                self.logger.debug(f"Source search path not found: {rule_stock_root}")
+            if not self._evaluate_rule(rule):
                 continue
 
-            for pattern in files:
-                # Find matching items in Source (Stock ROM)
-                sources = []
-                if match_mode == "glob":
-                    sources = list(rule_stock_root.glob(pattern))
-                elif match_mode == "recursive":
-                    sources = list(rule_stock_root.rglob(pattern))
+            desc = rule.get("description", "Unknown Rule")
+            rtype = rule.get("type", "file")
+            self.logger.info(f"Applying replacement rule: {desc}")
+
+            try:
+                if rtype == "unzip_override":
+                    self._handle_unzip_override(rule)
+                elif rtype == "copy_file_internal":
+                    self._handle_copy_file_internal(rule)
+                elif rtype == "remove_files":
+                    self._handle_remove_files(rule)
+                elif rtype == "hexpatch":
+                    self._handle_hexpatch(rule)
+                elif rtype == "append_text":
+                    self._handle_append_text(rule)
                 else:
-                    # exact
-                    exact_file = rule_stock_root / pattern
-                    if exact_file.exists():
-                        sources = [exact_file]
+                    # Legacy 'file' type logic
+                    self._handle_legacy_replacement(rule)
+            except Exception as e:
+                self.logger.error(f"Failed to apply rule '{desc}': {e}")
+
+    def _handle_append_text(self, rule):
+        target_file = self.ctx.target_dir / rule["target"]
+        if not target_file.exists():
+            self.logger.warning(f"  AppendText target not found: {rule['target']}")
+            return
+        
+        text = rule.get("text", "")
+        if not text: return
+
+        self.logger.info(f"  Appending text to {rule['target']}...")
+        content = target_file.read_text(encoding='utf-8', errors='ignore')
+        
+        if text not in content:
+            with open(target_file, "a", encoding='utf-8') as f:
+                f.write(f"\n{text}\n")
+            self.logger.debug(f"    Appended: {text.strip()}")
+
+    def _handle_hexpatch(self, rule):
+        target_val = rule["target"]
+        target_files = []
+        
+        if "/" in target_val:
+            # Full path relative to target_dir
+            tf = self.ctx.target_dir / target_val
+            if tf.exists():
+                target_files.append(tf)
+        else:
+            # Just a filename, search for it
+            target_files = list(self.ctx.target_dir.rglob(target_val))
+
+        if not target_files:
+            self.logger.warning(f"  HexPatch target not found: {target_val}")
+            return
+
+        for target_file in target_files:
+            self.logger.info(f"  HexPatching {target_file.relative_to(self.ctx.target_dir)}...")
+            content = target_file.read_bytes()
+            
+            modified = False
+            for patch in rule.get("patches", []):
+                old_hex = patch["old"]
+                new_hex = patch["new"]
                 
-                if not sources:
-                    self.logger.debug(f"No source items found for pattern: {pattern}")
-                    continue
+                old_bytes = bytes.fromhex(old_hex)
+                new_bytes = bytes.fromhex(new_hex)
+                
+                if old_bytes in content:
+                    content = content.replace(old_bytes, new_bytes)
+                    modified = True
+                    self.logger.debug(f"    Patched hex: {old_hex[:10]}... -> {new_hex[:10]}...")
+            
+            if modified:
+                target_file.write_bytes(content)
 
-                for src_item in sources:
-                    # Calculate relative path to apply to target
-                    rel_name = src_item.name
-                    target_item = rule_target_root / rel_name
-                    
-                    found_in_target = False
-                    
-                    if match_mode == "recursive":
-                        # Search in target
-                        candidates = list(rule_target_root.rglob(rel_name))
-                        if candidates:
-                            target_item = candidates[0]
-                            found_in_target = True
-                    else:
-                        # Exact or Glob (flat check)
-                        if target_item.exists():
-                            found_in_target = True
-                            
-                    should_copy = False
-                    if found_in_target:
-                        should_copy = True
-                    elif ensure_exists:
-                        should_copy = True
-                        # Try to replicate structure if recursive
-                        if match_mode == "recursive":
-                            try:
-                                rel = src_item.relative_to(rule_stock_root)
-                                target_item = rule_target_root / rel
-                            except: pass
+    def _handle_unzip_override(self, rule):
+        source_zip = Path(rule["source"])
+        if not source_zip.exists():
+            self.logger.warning(f"  Source zip not found: {source_zip}")
+            return
+        
+        target_dir = self.ctx.target_dir
+        if "target" in rule:
+            target_dir = target_dir / rule["target"]
+            
+        self.logger.info(f"  Unzipping {source_zip.name} to {target_dir}")
+        with zipfile.ZipFile(source_zip, 'r') as z:
+            z.extractall(target_dir)
 
-                    if should_copy:
-                        self.logger.info(f"  Replacing/Adding: {rel_name}")
+    def _handle_copy_file_internal(self, rule):
+        # source/target are relative to target_dir (e.g. "odm/etc/xxx" -> "product/etc/xxx")
+        source = self.ctx.target_dir / rule["source"]
+        target = self.ctx.target_dir / rule["target"]
+        
+        if not source.exists():
+            if rule.get("ensure_exists", False):
+                self.logger.warning(f"  Internal source not found: {rule['source']}")
+            return
+
+        if not target.parent.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            
+        self.logger.info(f"  Copying internal: {rule['source']} -> {rule['target']}")
+        if source.is_dir():
+            shutil.copytree(source, target, dirs_exist_ok=True)
+        else:
+            shutil.copy2(source, target)
+
+    def _handle_remove_files(self, rule):
+        target_root = self.ctx.target_dir
+        files = rule.get("files", [])
+        search_path = rule.get("search_path", "")
+        
+        for pattern in files:
+            root = target_root / search_path
+            for item in root.glob(pattern):
+                self.logger.info(f"  Removing: {item.relative_to(target_root)}")
+                if item.is_dir():
+                    shutil.rmtree(item)
+                else:
+                    item.unlink()
+
+    def _handle_legacy_replacement(self, rule):
+        stock_root = self.ctx.stock.extracted_dir
+        target_root = self.ctx.target_dir
+        
+        search_path = rule.get("search_path", "")
+        match_mode = rule.get("match_mode", "exact")
+        ensure_exists = rule.get("ensure_exists", False)
+        files = rule.get("files", [])
+
+        # Define search roots
+        rule_stock_root = stock_root / search_path
+        rule_target_root = target_root / search_path
+
+        if not rule_stock_root.exists():
+            return
+
+        for pattern in files:
+            sources = []
+            if match_mode == "glob":
+                sources = list(rule_stock_root.glob(pattern))
+            elif match_mode == "recursive":
+                sources = list(rule_stock_root.rglob(pattern))
+            else:
+                exact_file = rule_stock_root / pattern
+                if exact_file.exists():
+                    sources = [exact_file]
+            
+            for src_item in sources:
+                rel_name = src_item.name
+                target_item = rule_target_root / rel_name
+                
+                found_in_target = False
+                if match_mode == "recursive":
+                    candidates = list(rule_target_root.rglob(rel_name))
+                    if candidates:
+                        target_item = candidates[0]
+                        found_in_target = True
+                else:
+                    if target_item.exists():
+                        found_in_target = True
                         
-                        # Prepare target directory
-                        if not target_item.parent.exists():
-                            target_item.parent.mkdir(parents=True, exist_ok=True)
-                            
-                        # Remove existing target
-                        if target_item.exists():
-                            if target_item.is_dir():
-                                shutil.rmtree(target_item)
-                            else:
-                                target_item.unlink()
-                        
-                        # Copy
-                        if src_item.is_dir():
-                            shutil.copytree(src_item, target_item, symlinks=True, dirs_exist_ok=True)
-                        else:
-                            shutil.copy2(src_item, target_item)
+                should_copy = found_in_target or ensure_exists
+                if should_copy:
+                    if not target_item.parent.exists():
+                        target_item.parent.mkdir(parents=True, exist_ok=True)
+                    
+                    if target_item.exists():
+                        if target_item.is_dir(): shutil.rmtree(target_item)
+                        else: target_item.unlink()
+                    
+                    if src_item.is_dir():
+                        shutil.copytree(src_item, target_item, symlinks=True, dirs_exist_ok=True)
                     else:
-                        self.logger.debug(f"  Skipping {rel_name} (Target missing and ensure_exists=False)")
+                        shutil.copy2(src_item, target_item)
 
     def _load_replacement_config(self):
-        """
-        Load replacements.json from common and device folder.
-        Strategy: Append (Common + Device)
-        """
-        replacements = []
-        
-        # 1. Common
-        common_cfg = Path("devices/common/replacements.json")
-        if common_cfg.exists():
-            try:
-                with open(common_cfg, 'r') as f:
-                    data = json.load(f)
-                    if isinstance(data, list):
-                        replacements.extend(data)
-                        self.logger.info("Loaded common replacements.")
-            except Exception as e:
-                self.logger.error(f"Failed to load common replacements: {e}")
-
-        # 2. Device (Append)
-        device_cfg = Path(f"devices/{self.ctx.stock_rom_code}/replacements.json")
-        if device_cfg.exists():
-            try:
-                with open(device_cfg, 'r') as f:
-                    data = json.load(f)
-                    if isinstance(data, list):
-                        replacements.extend(data)
-                        self.logger.info(f"Loaded device replacements for {self.ctx.stock_rom_code}.")
-            except Exception as e:
-                self.logger.error(f"Failed to load device replacements: {e}")
-        
-        return replacements
+        """Deprecated in favor of _load_merged_config"""
+        return []
 
     def _apply_eu_localization(self):
         bundle_path = Path(self.ctx.eu_bundle)
@@ -465,36 +583,12 @@ class SystemModifier:
         return None
 
     def _migrate_configs(self):
-        target_product = self.ctx.target_dir / "product"
-        stock_product = self.ctx.stock.extracted_dir / "product"
-        
-        target_disp = target_product / "etc/displayconfig"
-        stock_disp = stock_product / "etc/displayconfig"
-        
-        if target_disp.exists():
-            for f in target_disp.glob("display_id*.xml"):
-                f.unlink()
-        
-        if stock_disp.exists():
-            target_disp.mkdir(parents=True, exist_ok=True)
-            for f in stock_disp.glob("display_id*.xml"):
-                shutil.copy2(f, target_disp)
-            self.logger.info("Migrated displayconfig.")
-
-        target_feat = target_product / "etc/device_features"
-        stock_feat = stock_product / "etc/device_features"
-        
-        if target_feat.exists():
-            shutil.rmtree(target_feat)
-        
-        if stock_feat.exists():
-            shutil.copytree(stock_feat, target_feat, dirs_exist_ok=True)
-            self.logger.info("Migrated device_features.")
-            
-        stock_json = stock_product / "etc/device_info.json"
-        target_json = target_product / "etc/device_info.json"
-        if stock_json.exists():
-             shutil.copy2(stock_json, target_json)
+        """
+        Migrate configurations from Stock to Port.
+        Note: General migrations like displayconfig, device_features, and device_info.json
+        are now handled via devices/common/replacements.json.
+        """
+        self.logger.info("Configuration migration (via replacements.json) completed.")
 
     def _apktool_decode(self, apk_path: Path, out_dir: Path):
         self.shell.run_java_jar(self.apktool, ["d", str(apk_path), "-o", str(out_dir), "-f"])
@@ -1429,33 +1523,9 @@ class RomModifier:
         self.ctx.syncer.execute_rules(None, self.target_rom_img, clean_rules)
 
     def _sync_and_patch_components(self):
-        self.logger.info("Step 2: Syncing Stock Components & Patching...")
-        sync_rules = [
-            {"mode": "file_to_dir", "source": "MiuiCamera.apk", "target": "MiuiCamera"},
-            {"mode": "file_to_file", "source": "bootanimation.zip", "target": "bootanimation.zip"},
-        ]
-        
-        if self.ctx.stock_rom_code == "fuxi":
-            fuxi_rules = [
-                {
-                    "mode": "hexpatch", 
-                    "target": "libmigui.so", 
-                    "hex_old": "726F2E70726F647563742E70726F647563742E6E616D65",
-                    "hex_new": "726F2E70726F647563742E73706F6F6665642E6E616D65"
-                },
-                {
-                    "mode": "hexpatch", 
-                    "target": "libmigui.so", 
-                    "hex_old": "726F2E70726F647563742E646576696365",
-                    "hex_new": "726F2E73706F6F6665642E646576696365"
-                }
-            ]
-            # Properties migrated to devices/fuxi/features.json
-            
-            sync_rules.extend(fuxi_rules)       
-            self._apply_wild_boost()
-          
-        self.ctx.syncer.execute_rules(self.stock_rom_img, self.target_rom_img, sync_rules)
+        self.logger.info("Step 2: Syncing Stock Components & Patching (via replacements.json)...")
+        # Most components are now handled via replacements.json in SystemModifier phase.
+        self.logger.info("Phase 2 sync completed.")
      
     def _apply_overrides(self):
         self.logger.info("Step 3: Applying Physical Overrides...")
@@ -1486,36 +1556,3 @@ class RomModifier:
                 self.ctx.syncer.apply_override(common_os3_dir, self.target_rom_img)
             else:
                 self.logger.warning(f"Common OS3 override directory not found at {common_os3_dir}")
-
-    def _apply_wild_boost(self):
-        self.logger.info("Applying Kernel 5.15 perfmgr (Wild Boost)...")
-        import zipfile
-        
-        wild_boost_zip = Path("devices/common/wild_boost_5.15.zip")
-        
-        if not wild_boost_zip.exists():
-            self.logger.warning(f"Wild Boost package not found at {wild_boost_zip}. Skipping.")
-            return
-
-        try:
-            with zipfile.ZipFile(wild_boost_zip, 'r') as zip_ref:
-                zip_ref.extractall(self.target_rom_img)
-            self.logger.debug(f"     [+] Extracted {wild_boost_zip.name} to {self.target_rom_img}")
-                
-            modules_dir = self.target_rom_img / "vendor_dlkm/lib/modules"
-            
-            if modules_dir.exists():
-                load_file = modules_dir / "modules.load"
-                with open(load_file, "a") as f:
-                    f.write("perfmgr.ko\n")
-                self.logger.debug(f"     [+] Appended perfmgr.ko to {load_file.relative_to(self.target_rom_img)}")
-
-                dep_file = modules_dir / "modules.dep"
-                with open(dep_file, "a") as f:
-                    f.write("/vendor/lib/modules/perfmgr.ko:\n")
-                self.logger.debug(f"     [+] Appended perfmgr.ko to {dep_file.relative_to(self.target_rom_img)}")
-            else:
-                self.logger.warning(f"     [!] Directory {modules_dir} not found. Cannot append module dependencies.")
-
-        except Exception as e:
-            self.logger.error(f"     [X] Failed to apply Wild Boost: {e}")

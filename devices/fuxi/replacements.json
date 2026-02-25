@@ -1,0 +1,87 @@
+{
+    "replacements": [
+        {
+            "id": "fuxi_camera_sync",
+            "description": "Fuxi Camera Apk Sync (Leica Support)",
+            "type": "file",
+            "search_path": "product/priv-app",
+            "match_mode": "exact",
+            "ensure_exists": true,
+            "files": [
+                "MiuiCamera"
+            ]
+        },
+        {
+            "id": "fuxi_bootanimation_sync",
+            "description": "Fuxi Bootanimation Sync",
+            "type": "file",
+            "search_path": "product/media",
+            "match_mode": "exact",
+            "ensure_exists": true,
+            "files": [
+                "bootanimation.zip"
+            ]
+        },
+        {
+            "id": "fuxi_wild_boost",
+            "description": "Fuxi Wild Boost Performance Patch",
+            "type": "unzip_override",
+            "source": "devices/common/wild_boost_5.15.zip",
+            "target": "."
+        },
+        {
+            "id": "fuxi_wild_boost_load",
+            "description": "Fuxi Wild Boost modules.load",
+            "type": "append_text",
+            "target": "vendor_dlkm/lib/modules/modules.load",
+            "text": "perfmgr.ko"
+        },
+        {
+            "id": "fuxi_wild_boost_dep",
+            "description": "Fuxi Wild Boost modules.dep",
+            "type": "append_text",
+            "target": "vendor_dlkm/lib/modules/modules.dep",
+            "text": "/vendor/lib/modules/perfmgr.ko:"
+        },
+        {
+            "id": "fuxi_hexpatch_libmigui",
+            "description": "Fuxi HexPatch libmigui.so for Spoofing",
+            "type": "hexpatch",
+            "target": "libmigui.so",
+            "patches": [
+                {
+                    "old": "726F2E70726F647563742E70726F647563742E6E616D65",
+                    "new": "726F2E70726F647563742E73706F6F6665642E6E616D65"
+                },
+                {
+                    "old": "726F2E70726F647563742E646576696365",
+                    "new": "726F2E73706F6F6665642E646576696365"
+                }
+            ]
+        },
+        {
+            "id": "fuxi_camera_libs_patch",
+            "description": "Fuxi Camera Algorithm Libs (Leica Algorithms)",
+            "type": "file",
+            "search_path": "vendor/lib64",
+            "match_mode": "glob",
+            "ensure_exists": false,
+            "files": [
+                "libcamera_*.so",
+                "libmiparking.so",
+                "libmicamera_*.so"
+            ]
+        },
+        {
+            "id": "fuxi_odm_vintf",
+            "description": "Fuxi ODM VINTF Sync (Hardware Interface)",
+            "type": "file",
+            "search_path": "odm/etc/vintf",
+            "match_mode": "glob",
+            "ensure_exists": true,
+            "files": [
+                "manifest_*.xml"
+            ]
+        }
+    ]
+}

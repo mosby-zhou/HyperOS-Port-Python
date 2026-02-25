@@ -22,20 +22,91 @@ class PropertyModifier:
         """Execute all property modification logic"""
         self.logger.info("Starting build.prop modifications...")
         
-        # 1. Global replacement (time, code, fingerprint, etc.)
+        # 1. Global codename and model replacement
+        self._global_codename_replacement()
+
+        # 2. Global replacement from config (time, code, fingerprint, etc.)
         self._update_general_info()
         
-        # 2. Screen density (DPI) migration
+        # 3. Screen density (DPI) migration
         self._update_density()
         
-        # 3. Apply specific fixes (Millet, Blur, Cgroup)
+        # 4. Apply specific fixes (Millet, Blur, Cgroup)
         self._apply_specific_fixes()
+
+        # 5. Reconstruct Hardware Props from Base
+        self._reconstruct_props()
         
         self._regenerate_fingerprint()
         
         self._optimize_core_affinity()
         
         self.logger.info("Build.prop modifications completed.")
+
+    def _global_codename_replacement(self):
+        """
+        Replace Port codename/model with Base codename/model globally in all build.prop files.
+        """
+        self.logger.info("Performing global codename and model replacement...")
+        
+        # Source (Port) -> Target (Base)
+        replacements = [
+            (self.ctx.port_rom_code, self.ctx.stock_rom_code),
+        ]
+        
+        # Add product model if available
+        port_model = self.ctx.port.get_prop("ro.product.model")
+        base_model = self.ctx.stock.get_prop("ro.product.model")
+        if port_model and base_model and port_model != base_model:
+            replacements.append((port_model, base_model))
+
+        for prop_file in self.ctx.target_dir.rglob("build.prop"):
+            try:
+                content = prop_file.read_text(encoding='utf-8', errors='ignore')
+                new_content = content
+                for old, new in replacements:
+                    if old and new and old != new:
+                        new_content = new_content.replace(old, new)
+                
+                if content != new_content:
+                    prop_file.write_text(new_content, encoding='utf-8')
+            except Exception as e:
+                self.logger.error(f"Failed to process {prop_file}: {e}")
+
+    def _reconstruct_props(self):
+        """
+        Reconstruct critical hardware properties from Stock ROM into Port ROM.
+        """
+        self.logger.info("Reconstructing hardware properties from Base...")
+        
+        # Properties to sync from stock to port
+        sync_keys = [
+            "ro.product.model",
+            "ro.product.brand",
+            "ro.product.name",
+            "ro.product.device",
+            "ro.product.manufacturer",
+            "ro.build.product",
+            "ro.product.marketname",
+        ]
+        
+        base_props = {}
+        for k in sync_keys:
+            val = self.ctx.stock.get_prop(k)
+            if val: base_props[k] = val
+
+        for prop_file in self.ctx.target_dir.rglob("build.prop"):
+            try:
+                content = prop_file.read_text(encoding='utf-8', errors='ignore')
+                modified = False
+                for k, v in base_props.items():
+                    if f"{k}=" in content:
+                        content = re.sub(f"{re.escape(k)}=.*", f"{k}={v}", content)
+                        modified = True
+                
+                if modified:
+                    prop_file.write_text(content, encoding='utf-8')
+            except Exception: pass
 
     def _update_general_info(self):
         """Modified to load from devices/common/props_global.json"""
