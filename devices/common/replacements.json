@@ -57,6 +57,14 @@
             "match_mode": "exact",
             "ensure_exists": true,
             "files": ["device_info.json"]
+        },
+        {
+            "description": "Bootanimation Sync",
+            "type": "file",
+            "search_path": "product/media",
+            "match_mode": "exact",
+            "ensure_exists": true,
+            "files": ["bootanimation.zip"]
         }
     ]
 }
