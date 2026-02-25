@@ -12,17 +12,6 @@
             ]
         },
         {
-            "id": "fuxi_bootanimation_sync",
-            "description": "Fuxi Bootanimation Sync",
-            "type": "file",
-            "search_path": "product/media",
-            "match_mode": "exact",
-            "ensure_exists": true,
-            "files": [
-                "bootanimation.zip"
-            ]
-        },
-        {
             "id": "fuxi_wild_boost",
             "description": "Fuxi Wild Boost Performance Patch",
             "type": "unzip_override",
