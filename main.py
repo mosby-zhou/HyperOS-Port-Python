@@ -10,6 +10,7 @@ from src.core.modifier import FirmwareModifier, SystemModifier, FrameworkModifie
 from src.core.packer import Repacker
 from src.core.rom import RomPackage
 from src.core.context import PortingContext
+from src.core.config_loader import load_device_config
 from src.utils.downloader import RomDownloader
 
 # Set up logging
@@ -29,11 +30,14 @@ def parse_args():
     parser = argparse.ArgumentParser(description="HyperOS Porting Tool")
     parser.add_argument("--stock", required=True, help="Path to Stock ROM (zip/payload/dir)")
     parser.add_argument("--port", required=True, help="Path to Port ROM (zip/payload/dir)")
-    parser.add_argument("--ksu", action="store_true", help="Inject KernelSU into init_boot")
+    parser.add_argument("--ksu", action="store_true", help="Inject KernelSU into init_boot/boot. Default: from config or False")
     parser.add_argument("--work-dir", default="build", help="Working directory (default: build)")
     parser.add_argument("--clean", action="store_true", help="Clean working directory before starting")
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
-    parser.add_argument("--pack-type", choices=["super", "payload"], default="payload", help="Output format: super (Super Image/Fastboot) or payload (OTA Payload/Recovery). Default: payload")
+    parser.add_argument("--pack-type", choices=["super", "payload"], default=None,
+                        help="Output format: super (Super Image/Fastboot) or payload (OTA Payload/Recovery). Default: from config or 'payload'")
+    parser.add_argument("--fs-type", choices=["erofs", "ext4"], default=None,
+                        help="Filesystem type for repacking. Default: from config or 'erofs'")
     parser.add_argument("--eu-bundle", help="Path/URL to EU Localization Bundle zip")
     return parser.parse_args()
 
@@ -80,7 +84,7 @@ def main():
         # Initialize ROM packages
         stock = RomPackage(args.stock, stock_work_dir, label="Stock")
         port = RomPackage(args.port, port_work_dir, label="Port")
-        
+
         # Define port ROM partitions to extract
         port_partitions = ["system", "product", "system_ext", "mi_ext"]
 
@@ -92,16 +96,32 @@ def main():
         # Execute Phase 2: Context Initialization
         logger.info(">>> Phase 2: Initialization")
         ctx = PortingContext(stock, port, target_work_dir)
-        ctx.enable_ksu = args.ksu
         ctx.eu_bundle = args.eu_bundle
         ctx.initialize_target()
 
+        # Load device configuration for KSU and pack settings
+        stock_device_code = stock.get_prop("ro.product.name_for_attestation") or \
+                           stock.get_prop("ro.product.vendor.device") or "unknown"
+        device_config = load_device_config(stock_device_code, logger)
+
+        # Determine KSU enable: CLI arg > config > default
+        enable_ksu = args.ksu or device_config.get("ksu", {}).get("enable", False)
+        ctx.enable_ksu = enable_ksu
+        logger.info(f"KernelSU: {'enabled' if enable_ksu else 'disabled'} (from {'CLI' if args.ksu else 'config'})")
+
+        # Determine pack type: CLI arg > config > default
+        pack_type = args.pack_type or device_config.get("pack", {}).get("type", "payload")
+        fs_type = args.fs_type or device_config.get("pack", {}).get("fs_type", "erofs")
+
+        logger.info(f"Pack Type: {pack_type} (from {'CLI' if args.pack_type else 'config'})")
+        logger.info(f"Filesystem: {fs_type} (from {'CLI' if args.fs_type else 'config'})")
+
         logger.info(f"Detected Stock ROM Type: {stock.rom_type}")
-        
+
         # Export properties for debug analysis
         stock.export_props(work_dir / "stock_debug.prop")
         port.export_props(work_dir / "port_debug.prop")
-        
+
         # Identify stock and port device models
         stock_device = stock.get_prop("ro.product.name_for_attestation")
         port_device = port.get_prop("ro.product.name_for_attestation")
@@ -110,40 +130,40 @@ def main():
 
         # Execute Phase 3: System Modification
         logger.info(">>> Phase 3: Modification")
-        
+
         # System modifications
         SystemModifier(ctx).run()
-        
+
         # Property modifications
         PropertyModifier(ctx).run()
-        
+
         # Framework modifications
         framework_modifier = FrameworkModifier(ctx)
         framework_modifier.run()
-        
+
         # Firmware modifications
         FirmwareModifier(ctx).run()
-        
+
         # General ROM modifications
         RomModifier(ctx).run_all_modifications()
-        
+
         # App patching
         AppPatcher(ctx, framework_modifier).run()
 
         # Execute Phase 4: Image Repacking
         logger.info(">>> Phase 4: Repacking")
         packer = Repacker(ctx)
-        packer.pack_all(pack_type="EROFS", is_rw=False)
-        
+        packer.pack_all(pack_type=fs_type.upper(), is_rw=(fs_type == "ext4"))
+
         logger.info(f"All images packed successfully! Check {target_work_dir}/*.img")
 
         # Execute Packing Strategy
-        if args.pack_type == "super":
+        if pack_type == "super":
             # Generate Super Image (Fastboot)
             packer.pack_super_image()
         else:
             # Generate OTA payload (Recovery)
-            packer.pack_ota_payload() 
+            packer.pack_ota_payload()
 
     except Exception as e:
         logger.error(f"An error occurred during porting: {e}", exc_info=True)
