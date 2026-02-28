@@ -15,6 +15,7 @@
 - 🛠️ **全自动化**: 从底包/移植包 ZIP 到最终可刷入 ZIP 的端到端移植流程。
 - 💉 **智能修补**: 自动修改固件、系统、框架和 ROM 属性。
 - 🧬 **GKI 支持**: 针对 GKI 2.0 (5.10+) 及标准 GKI 设备，提供智能 KernelSU 注入。
+- 🚀 **Wild Boost**: 自动安装性能增强模块，支持内核版本检测。
 - 🧩 **模块化配置**: 通过简单的 JSON 文件开启/关闭功能（AOD、AI 引擎等）。
 - 🌏 **EU 本地化**: 为 Global/EU 底包恢复国内特有功能（NFC、小米钱包、小爱同学）。
 - 📦 **多格式支持**: 支持生成 `payload.bin` (Recovery/OTA) 或 `super.img` (Hybrid/Fastboot) 格式。
@@ -27,6 +28,10 @@
 ### 支持机型
 - 理论上支持内核版本 **5.10 及以上 (GKI 2.0+)** 的 **高通平台** 小米/红米设备。
 - 支持在 `devices/<机型代码>/` 中自定义机型覆盖规则。
+
+### Wild Boost 兼容设备
+- **小米 12S (mayfly)**: 内核 5.10 - 安装到 vendor_boot ramdisk
+- **小米 13 (fuxi)**: 内核 5.15 - 安装到 vendor_dlkm
 
 ### 已验证机型
 - **底包 (Stock):**
@@ -82,7 +87,8 @@ sudo python3 main.py --stock <底包路径> --port <移植包路径> --pack-type
 | `--stock` | **(必需)** 底包 (Stock ROM) 路径 | 无 |
 | `--port` | **(必需)** 移植包 (Port ROM) 路径 | 无 |
 | `--pack-type` | 打包格式: `payload` 或 `super` | `payload` |
-| `--ksu` | 注入 KernelSU 到 `init_boot`/`boot` | `false` |
+| `--fs-type` | 文件系统类型：`erofs` 或 `ext4` | 从 config 读取 |
+| `--ksu` | 注入 KernelSU 到 `init_boot`/`boot` | 从 config 读取 |
 | `--work-dir` | 解包和修补的工作目录 | `build` |
 | `--clean` | 开始前清理工作目录 | `false` |
 | `--debug` | 开启调试日志 | `false` |
@@ -94,7 +100,49 @@ sudo python3 main.py --stock <底包路径> --port <移植包路径> --pack-type
 
 本项目采用模块化的 JSON 配置系统。
 
-### 1. 特性开关 (`features.json`)
+### 1. 设备配置 (`config.json`)
+控制设备特定的设置，包括 wild_boost、打包类型和 KSU。
+- **位置**: `devices/<机型代码>/config.json`
+- **优先级**: CLI 参数 > `config.json` > 默认值
+
+```json
+{
+    "wild_boost": {
+        "enable": true
+    },
+    "pack": {
+        "type": "payload",
+        "fs_type": "erofs"
+    },
+    "ksu": {
+        "enable": false
+    }
+}
+```
+
+**CLI 覆盖示例:**
+```bash
+# 覆盖打包类型和文件系统
+sudo python3 main.py --stock stock.zip --port port.zip --pack-type super --fs-type ext4
+```
+
+### 2. Wild Boost 支持
+根据内核版本自动安装性能增强模块。
+
+**功能特性:**
+- 📌 **自动检测**: 检测内核版本 (5.10 / 5.15+)
+- 📌 **智能安装**:
+  - 内核 5.10: 安装到 `vendor_boot` ramdisk
+  - 内核 5.15+: 安装到 `vendor_dlkm`
+- 📌 **AVB 自动禁用**: 防止修改后无法启动
+- 📌 **设备伪装**: HexPatch `libmigui.so`
+- 📌 **备用方案**: `persist.sys.feas.enable=true` 用于新系统
+
+**支持设备:**
+- 小米 12S (mayfly) - 内核 5.10
+- 小米 13 (fuxi) - 内核 5.15
+
+### 3. 特性开关 (`features.json`)
 管理每个设备的系统特性和属性。
 - **位置**: `devices/<机型代码>/features.json`
 
@@ -110,7 +158,7 @@ sudo python3 main.py --stock <底包路径> --port <移植包路径> --pack-type
 }
 ```
 
-### 2. 资源 overlays (`replacements.json`)
+### 4. 资源 overlays (`replacements.json`)
 自动化文件/目录替换（如 overlays、音频配置等）。
 ```json
 [
