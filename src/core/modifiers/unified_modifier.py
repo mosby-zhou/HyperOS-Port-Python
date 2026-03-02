@@ -79,6 +79,7 @@ class UnifiedModifier(BaseModifier):
             self.logger.info("PHASE 1: System-Level Modifications")
             self.logger.info("=" * 60)
             
+            self.logger.info("Executing system-level plugins...")
             results = self.system_manager.execute()
             
             success = sum(1 for r in results.values() if r is True)
@@ -107,6 +108,7 @@ class UnifiedModifier(BaseModifier):
                     f"{cache_stats['packages']} packages"
                 )
             
+            self.logger.info("Executing APK-level plugins...")
             results = self.apk_manager.execute()
             
             success = sum(1 for r in results.values() if r is True)
