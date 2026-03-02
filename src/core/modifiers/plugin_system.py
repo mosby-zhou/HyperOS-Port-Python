@@ -483,9 +483,10 @@ class PluginManager:
                 # Collect buffered logs and results
                 plugin_logs: Dict[str, str] = {}
                 plugin_errors: Dict[str, Exception] = {}
+                plugin_results: Dict[str, Any] = {}
                 
                 def execute_with_log_capture(plugin):
-                    """Execute plugin and capture logs."""
+                    """Execute plugin with full checks and capture logs."""
                     buffer_handler = None
                     if plugin.parallel_safe:
                         buffer_handler = BufferedLogHandler(self.logger)
@@ -493,10 +494,19 @@ class PluginManager:
                         plugin.logger.propagate = False
                     
                     try:
+                        # Run prerequisite checks
+                        if not plugin.check_prerequisites():
+                            return (None, buffer_handler, "prerequisites")
+                        
+                        # Version compatibility check
+                        if not self._check_version_compatibility(plugin):
+                            return (None, buffer_handler, "version")
+                        
+                        # Execute the plugin
                         success = plugin.modify() if not plugin.timeout else self._execute_with_timeout(plugin, plugin.timeout)
-                        return success, buffer_handler
+                        return (success, buffer_handler, None)
                     except Exception as e:
-                        return e, buffer_handler
+                        return (e, buffer_handler, None)
                 
                 # Submit all tasks
                 with ThreadPoolExecutor(max_workers=min(self._max_workers, len(group))) as executor:
@@ -509,10 +519,18 @@ class PluginManager:
                     for future in as_completed(futures):
                         plugin = futures[future]
                         try:
-                            result, buffer_handler = future.result()
-                            if isinstance(result, Exception):
+                            result, buffer_handler, skip_reason = future.result()
+                            
+                            if skip_reason == "prerequisites":
+                                self.logger.info(f"Plugin {plugin.name}: prerequisites not met, skipped")
+                                results[plugin.name] = None
+                            elif skip_reason == "version":
+                                self.logger.info(f"Plugin {plugin.name}: version incompatible, skipped")
+                                results[plugin.name] = None
+                            elif isinstance(result, Exception):
                                 plugin_errors[plugin.name] = result
                                 results[plugin.name] = False
+                                self.logger.error(f"Plugin {plugin.name} failed: {result}")
                             else:
                                 results[plugin.name] = result
                                 # Capture buffered logs
