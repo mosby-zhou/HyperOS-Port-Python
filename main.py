@@ -52,9 +52,25 @@ def parse_args():
     parser.add_argument("--fs-type", choices=["erofs", "ext4"], default=None,
                         help="Filesystem type for repacking. Default: from config or 'erofs'")
     parser.add_argument("--eu-bundle", help="Path/URL to EU Localization Bundle zip")
-    parser.add_argument("--phases", nargs="+", choices=["system", "apk", "framework", "firmware", "repack"], 
-                        help="Specific phases to run (default: all)")
-    return parser.parse_args()
+    parser.add_argument("--phases", nargs="+", 
+                        help="Specific phases to run: system, apk, framework, firmware, repack (default: all)")
+    
+    args = parser.parse_args()
+    
+    # Handle comma-separated phases (e.g., "system,apk" -> ["system", "apk"])
+    if args.phases:
+        expanded_phases = []
+        for phase in args.phases:
+            expanded_phases.extend(phase.split(','))
+        args.phases = [p.strip() for p in expanded_phases if p.strip()]
+        
+        # Validate phases
+        valid_phases = ["system", "apk", "framework", "firmware", "repack"]
+        invalid = [p for p in args.phases if p not in valid_phases]
+        if invalid:
+            parser.error(f"invalid choice: {', '.join(invalid)} (choose from {', '.join(valid_phases)})")
+    
+    return args
 
 def clean_work_dir(work_dir: Path):
     if work_dir.exists():
