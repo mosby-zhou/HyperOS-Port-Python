@@ -25,11 +25,6 @@ class PortingContext:
         self.syncer = ROMSyncEngine(self, logging.getLogger("SyncEngine"))
         self.shell = ShellRunner()
         self.enable_ksu = False
-        
-        # APK caches for fast lookup
-        self._apk_file_cache: dict[str, Path] = {}  # filename -> path
-        self._apk_package_cache: dict[str, Path] = {}  # package_name -> path
-        self._apk_caches_built = False
 
     def _init_tools(self):
         """
@@ -368,9 +363,7 @@ class PortingContext:
         """
         Build APK caches for fast lookup.
         
-        Creates two caches:
-        1. _apk_file_cache: filename -> Path (e.g., "settings.apk" -> Path)
-        2. _apk_package_cache: package_name -> Path (e.g., "com.android.settings" -> Path)
+        Delegates to ROMSyncEngine for caching.
         
         Args:
             force: If True, rebuild even if caches already exist
@@ -378,49 +371,11 @@ class PortingContext:
         Returns:
             dict with 'files' and 'packages' counts
         """
-        if self._apk_caches_built and not force:
-            return {
-                'files': len(self._apk_file_cache),
-                'packages': len(self._apk_package_cache)
-            }
+        if force or not hasattr(self.syncer, '_target_rom_cache') or not self.syncer._target_rom_cache:
+            # Force build by passing target_dir
+            self.syncer.find_apk_by_name("dummy.apk", self.target_dir)
         
-        self.logger.info("Building APK caches for fast lookup...")
-        
-        # Clear existing caches
-        self._apk_file_cache.clear()
-        self._apk_package_cache.clear()
-        
-        # Scan all APKs in target directory
-        apk_count = 0
-        for apk_path in self.target_dir.rglob("*.apk"):
-            if not apk_path.is_file():
-                continue
-            
-            # Cache by filename (lowercase for case-insensitive lookup)
-            filename = apk_path.name.lower()
-            if filename not in self._apk_file_cache:
-                self._apk_file_cache[filename] = apk_path
-            
-            # Try to get package name using aapt2
-            pkg_name = self._get_apk_package_name(apk_path)
-            if pkg_name:
-                if pkg_name not in self._apk_package_cache:
-                    self._apk_package_cache[pkg_name] = apk_path
-            
-            apk_count += 1
-        
-        self._apk_caches_built = True
-        
-        self.logger.info(
-            f"APK caches built: {len(self._apk_file_cache)} files, "
-            f"{len(self._apk_package_cache)} packages indexed"
-        )
-        
-        return {
-            'files': len(self._apk_file_cache),
-            'packages': len(self._apk_package_cache),
-            'total_scanned': apk_count
-        }
+        return self.syncer.get_apk_cache_stats()
     
     def _get_apk_package_name(self, apk_path: Path) -> str | None:
         """
@@ -453,26 +408,21 @@ class PortingContext:
         """
         Find APK by filename (case-insensitive).
         
+        Delegates to ROMSyncEngine for caching.
+        
         Args:
             apk_name: APK filename without path (e.g., "Settings" or "settings.apk")
             
         Returns:
             Path to APK or None if not found
         """
-        # Ensure caches are built
-        if not self._apk_caches_built:
-            self.build_apk_caches()
-        
-        # Normalize name
-        if not apk_name.endswith('.apk'):
-            apk_name = apk_name + '.apk'
-        
-        # Case-insensitive lookup
-        return self._apk_file_cache.get(apk_name.lower())
+        return self.syncer.find_apk_by_name(apk_name, self.target_dir)
     
     def find_apk_by_package(self, package_name: str) -> Path | None:
         """
         Find APK by package name.
+        
+        Delegates to ROMSyncEngine for caching.
         
         Args:
             package_name: Full package name (e.g., "com.android.settings")
@@ -480,15 +430,10 @@ class PortingContext:
         Returns:
             Path to APK or None if not found
         """
-        # Ensure caches are built
-        if not self._apk_caches_built:
-            self.build_apk_caches()
-        
-        return self._apk_package_cache.get(package_name)
+        return self.syncer.find_apk_by_package(package_name, self.target_dir)
     
     def clear_apk_caches(self):
         """Clear APK caches to free memory."""
-        self._apk_file_cache.clear()
-        self._apk_package_cache.clear()
-        self._apk_caches_built = False
+        self.syncer._target_rom_cache.clear()
+        self.syncer._target_package_cache.clear()
         self.logger.debug("APK caches cleared")

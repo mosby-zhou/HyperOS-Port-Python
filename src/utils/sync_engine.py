@@ -274,3 +274,53 @@ class ROMSyncEngine:
                 
         elapsed = time.time() - start_time
         self.logger.info(f"Package cache built in {elapsed:.2f}s. Indexed {apk_count} APKs.")
+    
+    def find_apk_by_name(self, apk_name: str, target_dir: Path = None) -> Path | None:
+        """Find APK by filename.
+        
+        Args:
+            apk_name: APK filename (e.g., "Settings.apk" or "Settings")
+            target_dir: Target directory to search (defaults to context's target_dir)
+            
+        Returns:
+            Path to APK or None if not found
+        """
+        if not apk_name.endswith('.apk'):
+            apk_name = apk_name + '.apk'
+        
+        # Ensure cache is built
+        if target_dir and not self._target_rom_cache:
+            self._target_rom_cache = self._build_cache(target_dir)
+        
+        # Find in cache
+        matches = self._target_rom_cache.get(apk_name.lower(), [])
+        return matches[0] if matches else None
+    
+    def find_apk_by_package(self, package_name: str, target_dir: Path = None) -> Path | None:
+        """Find APK by package name.
+        
+        Args:
+            package_name: Full package name (e.g., "com.android.settings")
+            target_dir: Target directory to search (defaults to context's target_dir)
+            
+        Returns:
+            Path to APK or None if not found
+        """
+        # Ensure package cache is built
+        if target_dir and not self._target_package_cache:
+            self._build_package_cache(target_dir)
+        
+        # Find in package cache
+        matches = self._target_package_cache.get(package_name, [])
+        return matches[0] if matches else None
+    
+    def get_apk_cache_stats(self) -> dict:
+        """Get APK cache statistics.
+        
+        Returns:
+            dict with cache stats
+        """
+        return {
+            'files': len(self._target_rom_cache),
+            'packages': len(self._target_package_cache)
+        }
