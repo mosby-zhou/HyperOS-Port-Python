@@ -16,7 +16,8 @@ class SecurityCenterModifier(ApkModifierPlugin):
     description = "Enhance battery info display and disable permission timers"
     apk_name = "SecurityCenter"
     package_name = "com.miui.securitycenter"
-    priority = 65
+    priority = 100
+    parallel_safe = True
     
     def _apply_patches(self, work_dir: Path):
         """Apply all SecurityCenter patches."""

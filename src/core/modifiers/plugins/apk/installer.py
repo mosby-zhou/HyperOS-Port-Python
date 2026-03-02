@@ -16,7 +16,8 @@ class InstallerModifier(ApkModifierPlugin):
     description = "Disable MIUI Package Installer security checks"
     apk_name = "MIUIPackageInstaller"
     package_name = "com.miui.packageinstaller"
-    priority = 60
+    priority = 100
+    parallel_safe = True
     
     def _apply_patches(self, work_dir: Path):
         """Apply all installer patches."""

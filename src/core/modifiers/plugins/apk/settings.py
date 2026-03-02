@@ -15,7 +15,8 @@ class SettingsModifier(ApkModifierPlugin):
     description = "Apply EU/CN specific patches to Settings"
     apk_name = "Settings"
     package_name = "com.android.settings"
-    priority = 70
+    priority = 100
+    parallel_safe = True
     
     def _apply_patches(self, work_dir: Path):
         """Apply Settings patches based on ROM type."""

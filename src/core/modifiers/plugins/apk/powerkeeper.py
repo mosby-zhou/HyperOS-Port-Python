@@ -15,7 +15,8 @@ class PowerKeeperModifier(ApkModifierPlugin):
     description = "Unlock FTP and screen effects"
     apk_name = "PowerKeeper"
     package_name = "com.miui.powerkeeper"
-    priority = 76
+    priority = 100
+    parallel_safe = True
     
     def _apply_patches(self, work_dir: Path):
         """Apply PowerKeeper patches."""
