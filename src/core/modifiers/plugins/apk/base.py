@@ -49,7 +49,8 @@ class ApkModifierPlugin(ModifierPlugin):
         # Noisy APKEditor tags to filter out from permanent logs
         noise_keywords = [
             "Encoding:", "Decoding:", "Building:", "Analyzing:", "Copying:",
-            "Scanning:", "Writing:", "Compressing:", "Adding:"
+            "Scanning:", "Writing:", "Compressing:", "Adding:",
+            "[DECOMPILE]", "[BUILD]", "[ENCODE]"
         ]
         
         is_noise = any(kw in line for kw in noise_keywords)

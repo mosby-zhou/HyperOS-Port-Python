@@ -111,9 +111,10 @@ class ShellRunner:
                     for line in process.stdout:
                         clean_line = line.strip()
                         if on_line:
+                            # If callback provided, it's responsible for logging/filtering
                             on_line(clean_line)
-                        
-                        if logger and clean_line:
+                        elif logger and clean_line:
+                            # Standard streaming log
                             logger.info(f"  [SHELL] {clean_line}")
                         output_lines.append(line)
                 
