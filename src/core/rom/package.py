@@ -14,7 +14,7 @@ from .extractors import extract_local
 from .utils import compute_file_hash, load_single_prop_file, sort_prop_priority
 
 if TYPE_CHECKING:
-    pass
+    from src.core.cache_manager import PortRomCacheManager
 
 
 class RomPackage:
@@ -25,6 +25,7 @@ class RomPackage:
         file_path: Union[str, Path],
         work_dir: Union[str, Path],
         label: str = "Rom",
+        cache_manager: Optional["PortRomCacheManager"] = None,
     ):
         """Initialize RomPackage.
 
@@ -32,6 +33,7 @@ class RomPackage:
             file_path: Path to the ROM file or directory.
             work_dir: Working directory for extraction.
             label: Label for logging purposes.
+            cache_manager: Optional cache manager for Port ROM caching.
         """
         self.props: Dict[str, str] = {}
         self.prop_history: Dict[
@@ -42,6 +44,7 @@ class RomPackage:
         self.label: str = label
         self.logger: logging.Logger = logging.getLogger(label)
         self.shell: ShellRunner = ShellRunner()
+        self.cache_manager: Optional["PortRomCacheManager"] = cache_manager
 
         # Directory structure definition
         self.images_dir: Path = self.work_dir / "images"  # Stores .img files
@@ -106,6 +109,33 @@ class RomPackage:
 
         self.images_dir.mkdir(parents=True, exist_ok=True)
 
+        # === Check global cache for Port ROM ===
+        # Only use global cache for Port ROM (label="Port") when cache_manager is provided
+        if self.label == "Port" and self.cache_manager and partitions:
+            cached_partitions = []
+            for part in partitions:
+                if self.cache_manager.is_partition_cached(self.path, part):
+                    cached_partitions.append(part)
+
+            if cached_partitions:
+                self.logger.info(
+                    f"[{self.label}] Found {len(cached_partitions)} cached partitions: {cached_partitions}"
+                )
+                # Restore cached partitions
+                for part in cached_partitions:
+                    target_dir = self.extracted_dir / part
+                    if self.cache_manager.restore_partition(self.path, part, target_dir):
+                        self.logger.info(f"[{self.label}] Restored {part} from global cache")
+
+                # Extract remaining partitions that are not cached
+                remaining = [p for p in partitions if p not in cached_partitions]
+                if not remaining:
+                    self.logger.info(
+                        f"[{self.label}] All partitions restored from cache, skipping extraction"
+                    )
+                    return
+                partitions = remaining
+
         # === Check if source has changed and should extract new images ===
         # Compute hash of source file for change detection
         source_hash_path = self.work_dir / "source_file.hash"
@@ -148,8 +178,12 @@ class RomPackage:
             # Enhanced check: ensure at least 'system.img' (or 'system_a.img') exists
             # Also for FASTBOOT, if super.img still exists, it means extraction was incomplete.
             has_images = any(self.images_dir.iterdir())
-            has_system = (self.images_dir / "system.img").exists() or (self.images_dir / "system_a.img").exists()
-            incomplete_fastboot = self.rom_type == RomType.FASTBOOT and (self.images_dir / "super.img").exists()
+            has_system = (self.images_dir / "system.img").exists() or (
+                self.images_dir / "system_a.img"
+            ).exists()
+            incomplete_fastboot = (
+                self.rom_type == RomType.FASTBOOT and (self.images_dir / "super.img").exists()
+            )
 
             if has_images and has_system and not incomplete_fastboot:
                 self.logger.info(f"[{self.label}] Using cached images from previous extraction.")
@@ -257,10 +291,10 @@ class RomPackage:
                 str(self.extracted_dir),
             ]
             self.shell.run(cmd, capture_output=True)
-            
+
             # Since img_path might still be system_a.img if normalization didn't happen,
             # we handle the directory rename just in case
-            extracted_name = img_path.stem # e.g., 'system' or 'system_a'
+            extracted_name = img_path.stem  # e.g., 'system' or 'system_a'
             if extracted_name != part_name:
                 actual_dir = self.extracted_dir / extracted_name
                 if actual_dir.exists() and actual_dir.is_dir():
@@ -277,21 +311,41 @@ class RomPackage:
         # Pattern search to handle both 'system_fs_config' and 'system_a_fs_config'
         search_pattern = img_path.stem
 
-        possible_contexts = list(self.extracted_dir.glob(f"config/{search_pattern}_file_contexts")) + \
-                            list(target_dir.parent.glob(f"{search_pattern}_file_contexts")) + \
-                            list(target_dir.glob("*_file_contexts"))
-        
-        possible_fs_config = list(self.extracted_dir.glob(f"config/{search_pattern}_fs_config")) + \
-                             list(target_dir.parent.glob(f"{search_pattern}_fs_config")) + \
-                             list(target_dir.glob("*_fs_config"))
+        possible_contexts = (
+            list(self.extracted_dir.glob(f"config/{search_pattern}_file_contexts"))
+            + list(target_dir.parent.glob(f"{search_pattern}_file_contexts"))
+            + list(target_dir.glob("*_file_contexts"))
+        )
+
+        possible_fs_config = (
+            list(self.extracted_dir.glob(f"config/{search_pattern}_fs_config"))
+            + list(target_dir.parent.glob(f"{search_pattern}_fs_config"))
+            + list(target_dir.glob("*_fs_config"))
+        )
 
         if possible_contexts:
             target_context = self.config_dir / f"{part_name}_file_contexts"
             shutil.move(possible_contexts[0], target_context)
-            
+
         if possible_fs_config:
             target_fs = self.config_dir / f"{part_name}_fs_config"
             shutil.move(possible_fs_config[0], target_fs)
+
+        # Save partition to global cache (for Port ROM only)
+        if self.label == "Port" and self.cache_manager:
+            try:
+                self.cache_manager.store_partition(
+                    self.path,
+                    part_name,
+                    target_dir,
+                    metadata={
+                        "rom_type": self.rom_type.name,
+                        "extracted_at": str(Path().stat().st_mtime),
+                    },
+                )
+                self.logger.debug(f"[{self.label}] Cached partition {part_name} to global cache")
+            except Exception as e:
+                self.logger.warning(f"[{self.label}] Failed to cache partition {part_name}: {e}")
 
         return target_dir
 
