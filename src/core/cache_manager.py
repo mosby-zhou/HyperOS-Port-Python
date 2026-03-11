@@ -58,6 +58,8 @@ class CacheMetadata:
     total_size: int = 0
     modifier_version: str = "1.0"
     source_size: int = 0
+    rom_type: str = ""  # ROM类型 (PAYLOAD, FASTBOOT, etc.)
+    extracted_at: str = ""  # 提取时间戳
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
