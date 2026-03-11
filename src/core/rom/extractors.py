@@ -163,62 +163,32 @@ def extract_fastboot(
                         f"[{package.label}] Unpacking specific partitions: {partitions}"
                     )
                     for part in partitions:
-                        # Try standard lpunpack first
-                        success = True
+                        part_a = f"{part}_a"
                         try:
-                            cmd = ["lpunpack", "-p", part, str(super_img), str(package.images_dir)]
-                            package.shell.run(cmd)
-                        except Exception:
+                            cmd_py = [
+                                sys.executable,
+                                "src/utils/lpunpack.py",
+                                "-p",
+                                part_a,
+                                str(super_img),
+                                str(package.images_dir),
+                            ]
+                            package.shell.run(cmd_py)
+                        except Exception as e:
                             package.logger.warning(
-                                f"[{package.label}] lpunpack failed for {part}, trying lpunpack.py..."
+                                f"[{package.label}] Failed to extract {part_a}: {e}"
                             )
-                            try:
-                                cmd_py = [
-                                    sys.executable,
-                                    "src/utils/lpunpack.py",
-                                    "-p",
-                                    part,
-                                    str(super_img),
-                                    str(package.images_dir),
-                                ]
-                                package.shell.run(cmd_py)
-                            except Exception as e:
-                                package.logger.error(
-                                    f"[{package.label}] lpunpack.py also failed for {part}: {e}"
-                                )
-                                success = False
-
-                        if success:
-                            # Try suffix _a if needed (for AB devices)
-                            try:
-                                cmd_a = [
-                                    "lpunpack",
-                                    "-p",
-                                    f"{part}_a",
-                                    str(super_img),
-                                    str(package.images_dir),
-                                ]
-                                package.shell.run(cmd_a)
-                            except Exception:
-                                # Not always an error if _a doesn't exist
-                                pass
                 else:
                     package.logger.info(
                         f"[{package.label}] Unpacking ALL partitions from super.img..."
                     )
-                    try:
-                        package.shell.run(["lpunpack", str(super_img), str(package.images_dir)])
-                    except Exception:
-                        package.logger.warning(
-                            f"[{package.label}] lpunpack failed, trying lpunpack.py..."
-                        )
-                        cmd_py = [
-                            sys.executable,
-                            "src/utils/lpunpack.py",
-                            str(super_img),
-                            str(package.images_dir),
-                        ]
-                        package.shell.run(cmd_py)
+                    cmd_py = [
+                        sys.executable,
+                        "src/utils/lpunpack.py",
+                        str(super_img),
+                        str(package.images_dir),
+                    ]
+                    package.shell.run(cmd_py)
 
             except Exception as e:
                 package.logger.error(f"Failed to unpack super.img: {e}")
