@@ -5,9 +5,9 @@ import zipfile
 import tarfile
 import os
 import re
-import urllib.request
 from pathlib import Path
 from src.utils.shell import ShellRunner
+from src.utils.file_downloader import download_file
 
 class Aria2Manager:
     def __init__(self):
@@ -66,8 +66,10 @@ class Aria2Manager:
         
         try:
             self.logger.info(f"Downloading from {download_url}...")
-            with urllib.request.urlopen(download_url) as response, open(archive_path, 'wb') as out_file:
-                shutil.copyfileobj(response, out_file)
+            
+            # Use shared downloader with progress bar
+            if not download_file(download_url, archive_path, self.logger):
+                raise RuntimeError("Failed to download aria2 archive")
             
             self.logger.info("Extracting...")
             extracted_bin = None

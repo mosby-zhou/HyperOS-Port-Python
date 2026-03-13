@@ -44,15 +44,18 @@ class OtaToolsManager:
         try:
             # Create temporary path for download
             temp_file = self.tools_dir.parent / "otatools_temp.zip"
-
-            self.logger.info(f"Downloading otatools from {url}...")
-
+            
             # Remove existing old temp file if exists
             if temp_file.exists():
                 temp_file.unlink()
 
-            # Actually download the tools
-            urllib.request.urlretrieve(url, temp_file)
+            # Actually download the tools using our custom helper
+            from .file_downloader import download_file
+            
+            success = download_file(url, temp_file, self.logger)
+            if not success:
+                self.logger.error("Failed to download otatools.")
+                return False
 
             self.logger.info("Download completed. Extracting...")
 

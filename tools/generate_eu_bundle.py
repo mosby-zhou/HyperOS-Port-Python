@@ -50,6 +50,7 @@ def main():
     parser.add_argument("--config", required=True, help="Path to JSON config defining apps to extract")
     parser.add_argument("--version", default="1.0", help="Version tag for the bundle")
     parser.add_argument("--out", default=".", help="Output directory")
+    parser.add_argument("--no-zip", action="store_true", help="Do not generate ZIP package, only output folder (for manual modification)")
     args = parser.parse_args()
 
     work_dir = Path("build_bundle_temp").resolve()
@@ -170,19 +171,37 @@ def main():
             logger.error("No apps collected! Check your config and ROM.")
             return
 
-        # 4. Pack Bundle
-        out_name = f"eu_localization_bundle_v{args.version}.zip"
+        # 4. Finalize Bundle
+        out_name = f"eu_localization_bundle_v{args.version}"
+        if not args.no_zip:
+            out_name += ".zip"
+            
         out_path = Path(args.out).resolve() / out_name
         
-        logger.info(f"Zipping bundle to {out_path}...")
-        
-        with zipfile.ZipFile(out_path, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
-            for file_path in bundle_root.rglob("*"):
-                if file_path.is_file():
-                    arcname = file_path.relative_to(bundle_root)
-                    zf.write(file_path, arcname)
-        
-        logger.info("Done!")
+        if out_path.exists():
+            if out_path.is_dir():
+                shutil.rmtree(out_path)
+            else:
+                out_path.unlink()
+            
+        if args.no_zip:
+            # Output folder only
+            logger.info(f"Moving bundle to {out_path}...")
+            shutil.move(str(bundle_root), str(out_path))
+            
+            logger.info(f"Done! Bundle folder generated at: {out_path}")
+            logger.info("You can now manually add missing APKs to this folder before zipping.")
+        else:
+            # Pack as ZIP
+            logger.info(f"Zipping bundle to {out_path}...")
+            
+            with zipfile.ZipFile(out_path, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
+                for file_path in bundle_root.rglob("*"):
+                    if file_path.is_file():
+                        arcname = file_path.relative_to(bundle_root)
+                        zf.write(file_path, arcname)
+            
+            logger.info("Done!")
 
     except Exception as e:
         logger.error(f"Error: {e}", exc_info=True)

@@ -1,7 +1,7 @@
 import os
-import requests
 import logging
 from pathlib import Path
+from .file_downloader import download_file
 
 class AssetDownloader:
     def __init__(self, repo="toraidl/HyperOS-Port-Python", tag="assets"):
@@ -56,41 +56,14 @@ class AssetDownloader:
         # Attempt standard download with a few retries
         max_retries = 2
         for attempt in range(max_retries + 1):
-            try:
-                self.logger.info(f"Downloading: {asset_name} (Attempt {attempt+1}/{max_retries+1})...")
-                local_path.parent.mkdir(parents=True, exist_ok=True)
-                
-                # Use a common User-Agent
-                headers = {'User-Agent': 'Mozilla/5.0'}
-                response = requests.get(url, stream=True, timeout=60, headers=headers)
-                
-                if response.status_code == 200:
-                    total_size = int(response.headers.get('content-length', 0))
-                    downloaded = 0
-                    
-                    with open(local_path, 'wb') as f:
-                        for chunk in response.iter_content(chunk_size=8192):
-                            if chunk:
-                                f.write(chunk)
-                                downloaded += len(chunk)
-                                if total_size > 1024 * 1024 and downloaded % (1024 * 1024 * 5) < 8192:
-                                    self.logger.info(f"  Downloaded: {downloaded // (1024*1024)}MB / {total_size // (1024*1024)}MB")
-                    
-                    self.logger.info(f"Successfully downloaded: {local_path.name}")
-                    return True
-                elif response.status_code == 404:
-                    self.logger.warning(f"Asset not found on GitHub: {asset_name}")
-                    return False
-                else:
-                    self.logger.error(f"Failed to download (HTTP {response.status_code})")
-                    
-            except Exception as e:
-                self.logger.error(f"Error during download attempt {attempt+1}: {e}")
-                if local_path.exists():
-                    local_path.unlink()
-                
-                if attempt == max_retries:
-                    if not self.mirror_url:
-                        self.logger.info("Tip: Try setting a mirror URL in AssetDownloader if network is unstable.")
+            self.logger.info(f"Downloading: {asset_name} (Attempt {attempt+1}/{max_retries+1})...")
+            
+            if download_file(url, local_path, self.logger):
+                return True
+            
+            # If failed, retry logic handled by loop
+            if attempt == max_retries:
+                if not self.mirror_url:
+                    self.logger.info("Tip: Try setting a mirror URL in AssetDownloader if network is unstable.")
         
         return False
