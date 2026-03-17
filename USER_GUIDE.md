@@ -43,6 +43,25 @@ otatools/
 
 ---
 
+## 1.3 工具链准备
+
+工具会在首次运行时自动下载 `otatools`，包含所有必要的二进制工具：
+
+```
+otatools/
+├── bin/           # 可执行文件
+│   ├── payload-dumper
+│   ├── lpunpack
+│   ├── mkfs.erofs
+│   └── ...
+├── lib64/         # 动态库
+└── security/      # 签名密钥
+```
+
+如果你 fork 了本项目，需要自行准备工具链，请参考 [第 14 章：工具链获取指南](#14-工具链获取指南)。
+
+---
+
 ## 2. 基本使用
 
 ### 2.1 标准移植模式
@@ -527,7 +546,414 @@ def extract_new_format(package: RomPackage, partitions: Optional[List[str]]) -> 
 
 ---
 
-## 12. 获取帮助
+## 12. Super 分区大小限制与原理
+
+### 12.1 概念说明
+
+Android 10+ 使用 **动态分区 (Dynamic Partition)** 架构，`super` 是一个物理分区，内部包含多个逻辑分区：
+
+```
+super (物理分区，固定大小)
+├── system_a (逻辑分区)
+├── system_b (逻辑分区)
+├── vendor_a
+├── vendor_b
+├── product_a
+├── product_b
+├── system_ext_a
+├── system_ext_b
+├── odm_a / odm_b
+├── vendor_dlkm_a / vendor_dlkm_b
+└── mi_ext_a / mi_ext_b
+```
+
+### 12.2 大小限制层级
+
+| 层级 | 说明 | 限制来源 |
+|------|------|----------|
+| **物理层** | super 分区物理大小 | 设备分区表 (GPT) |
+| **逻辑层** | 逻辑分区组大小上限 | lpmake metadata |
+| **实际层** | 各镜像文件大小 | 打包后的实际大小 |
+
+**关键规则**：所有逻辑分区大小之和 ≤ 逻辑分区组上限 ≤ super 物理大小
+
+### 12.3 查看分区信息
+
+**方法一：查看 rawprogram0.xml**
+
+```bash
+grep "super" images/rawprogram0.xml
+```
+
+输出示例：
+```xml
+<program filename="super.img" label="super"
+         num_partition_sectors="2228224"
+         size_in_KB="8912896.0" .../>
+```
+
+计算 super 物理大小：
+```
+2228224 sectors × 4096 bytes = 9126805504 bytes ≈ 8.5 GB
+```
+
+**方法二：使用 lpdump 查看 metadata**
+
+```bash
+bin/linux/x86_64/android-lptools-static-x86_64/lpdump super_raw.img
+```
+
+输出示例：
+```
+Metadata version: 10.2
+Metadata size: 1360 bytes
+Metadata max size: 65536 bytes
+Header flags: virtual_ab_device
+
+Super partition layout:
+------------------------
+super: 2048 .. 37608: odm_a (35560 sectors)
+super: 38912 .. 9337104: product_a (9298192 sectors)
+super: 9338880 .. 10823504: system_a (1484624 sectors)
+super: 10823680 .. 12330136: system_ext_a (1506456 sectors)
+super: 12331008 .. 16091576: vendor_a (3760568 sectors)
+super: 16093184 .. 16151648: vendor_dlkm_a (58464 sectors)
+super: 16152576 .. 16152864: mi_ext_a (288 sectors)
+------------------------
+Block device table:
+------------------------
+Partition name: super
+Size: 9126805504 bytes
+------------------------
+Group table:
+------------------------
+Name: qti_dynamic_partitions_a
+Maximum size: 8589934592 bytes  (约 8 GB)
+------------------------
+Name: qti_dynamic_partitions_b
+Maximum size: 8589934592 bytes
+------------------------
+```
+
+### 12.4 大小计算方法
+
+**扇区大小说明**：
+- lpdump 显示的 sector 是 512 字节（传统磁盘扇区）
+- super 分区使用的 block size 是 4096 字节
+
+**计算示例**：
+```
+product_a: 9298192 sectors × 512 bytes = 4,764,674,304 bytes ≈ 4.4 GB
+system_a:  1484624 sectors × 512 bytes = 760,127,488 bytes ≈ 725 MB
+vendor_a:  3760568 sectors × 512 bytes = 1,925,410,816 bytes ≈ 1.8 GB
+```
+
+### 12.5 验证大小是否合规
+
+**验证脚本**：
+```bash
+# 计算所有 _a 分区大小之和
+ls -l build/target/*_a.img | awk '{sum+=$5} END {print "总大小:", sum/1024/1024/1024, "GB"}'
+
+# 输出示例: 总大小: 7.6 GB
+```
+
+**验证规则**：
+- 逻辑分区总和 ≤ qti_dynamic_partitions_a 最大值 (8 GB)
+- 逻辑分区总和 ≤ super 物理大小 (8.5 GB)
+
+### 12.6 常见设备 super 大小
+
+| 设备 | super 大小 | 逻辑分区组上限 |
+|------|-----------|---------------|
+| 小米 12S Ultra (thor) | 8.5 GB | 8 GB |
+| 小米 13 (fuxi) | 9 GB | 8.5 GB |
+| 小米 14 (houdini) | 10 GB | 9.5 GB |
+
+> 注意：具体大小请以设备实际的 rawprogram0.xml 或 lpdump 输出为准。
+
+### 12.7 打包失败排查
+
+**问题**：`lpmake: partition would exceed group size`
+
+**原因**：逻辑分区大小之和超过了 group 上限
+
+**解决**：
+1. 检查是否有分区异常增大
+2. 精简不必要的应用减少 product 大小
+3. 检查 super_size 配置是否正确
+
+**问题**：刷入后无法启动
+
+**可能原因**：
+1. 分区大小超出物理限制
+2. AVB 验证失败
+3. metadata 损坏
+
+**排查步骤**：
+```bash
+# 1. 验证 super.img 格式
+file super.img
+# 应输出: Android sparse image
+
+# 2. 验证 metadata
+bin/linux/x86_64/android-lptools-static-x86_64/lpdump super_raw.img
+
+# 3. 验证大小
+ls -l *.img
+```
+
+### 12.8 精简后空间释放
+
+删除应用后，product 分区变小，释放的空间：
+
+| 操作 | product 变化 | super 变化 |
+|------|-------------|-----------|
+| 删除讯飞输入法 | -50 MB | -50 MB |
+| 删除多个预装应用 | -200~500 MB | 同等减少 |
+
+**释放空间去向**：
+- 逻辑分区变小后，super 内部产生空闲区域
+- 刷入后系统可动态使用这些空闲空间
+- 不会自动扩展其他分区
+
+---
+
+## 14. 工具链获取指南
+
+本节介绍如何从各种来源获取项目所需的工具链。如果你 fork 了本项目或需要手动准备工具，请参考以下内容。
+
+### 14.1 Google Android CI（官方推荐）
+
+Google 在 [ci.android.com](https://ci.android.com) 提供官方预构建工具，这是获取工具链的首选方式。
+
+#### 访问步骤
+
+1. 打开构建网格页面：https://ci.android.com/builds/branches/aosp-master/grid
+2. 点击 `aosp_cf_x86_64_phone` 列的任意绿色方块（表示构建成功）
+3. 进入 **Artifacts** 标签页
+
+#### 可下载的工具包
+
+| 工具包 | 内容 | 用途 |
+|--------|------|------|
+| `otatools.zip` | OTA 打包工具 | 生成 OTA 更新包、签名工具 |
+| `cvd-host_package.tar.gz` | Cuttlefish 主机工具 | 包含 lpmake、lpunpack、avbtool 等 |
+
+#### otatools.zip 包含的工具
+
+```
+otatools/
+├── bin/
+│   ├── ota_from_target_files  # OTA 包生成（Python 脚本）
+│   ├── signapk                # APK/ZIP 签名
+│   ├── avbtool                # Android Verified Boot 工具
+│   ├── append2simg            # 追加到 sparse image
+│   ├── e2fsdroid              # ext2/3/4 文件系统工具
+│   ├── simg2img               # sparse image 转换
+│   ├── img2simg               # 转换为 sparse image
+│   ├── mkbootimg              # 创建 boot 镜像
+│   ├── unpack_bootimg         # 解包 boot 镜像
+│   └── ...
+├── lib64/                     # 依赖的共享库
+└── security/                  # 签名密钥（testkey 等）
+```
+
+> **注意**：Google CI 的 `otatools.zip` **不包含** `lpmake`、`lpunpack` 等分区工具，这些工具在 `cvd-host_package.tar.gz` 中。
+
+#### cvd-host_package.tar.gz 包含的工具
+
+```
+cvd-host_package/
+├── bin/
+│   ├── lpmake                 # 创建 super.img
+│   ├── lpunpack               # 解包 super.img
+│   ├── lpadd                  # 添加分区到 super.img
+│   ├── lpdump                 # 查看 super.img 信息
+│   ├── lpflash                # 写入 super.img 到设备
+│   ├── adb                    # Android Debug Bridge
+│   ├── fastboot               # Fastboot 工具
+│   ├── avbtool                # AVB 工具
+│   ├── mkbootimg              # 创建 boot 镜像
+│   ├── unpack_bootimg         # 解包 boot 镜像
+│   └── launch_cvd             # Cuttlefish 启动（不需要）
+└── lib64/
+```
+
+### 14.2 分区工具（lpmake/lpunpack）
+
+如果只需要分区工具，可以从以下 GitHub 仓库获取预构建版本：
+
+| 仓库 | 说明 | 平台 |
+|------|------|------|
+| [Rprop/aosp15_partition_tools](https://github.com/Rprop/aosp15_partition_tools) | Android 15 静态链接版本 | Linux, Windows |
+| [northumber/android-partition-tools_prebuilt_binaries](https://github.com/northumber/android-partition-tools_prebuilt_binaries) | 预构建版本 | Linux |
+| [rendiix/termux-partition-tools](https://github.com/rendiix/termux-partition-tools) | Termux/Android 版 | Android |
+
+#### 分区工具说明
+
+| 工具 | 功能 |
+|------|------|
+| `lpmake` | 创建 super.img（动态分区镜像） |
+| `lpunpack` | 解包 super.img 到各个分区镜像 |
+| `lpadd` | 向 super.img 添加分区镜像 |
+| `lpflash` | 将 super.img 写入块设备 |
+| `lpdump` | 查看 super.img 分区布局和 metadata |
+
+### 14.3 EROFS 文件系统工具
+
+现代 Android (HyperOS/MIUI) 使用 EROFS 文件系统。
+
+#### Linux 发行版安装
+
+```bash
+# Ubuntu/Debian
+sudo apt install erofs-utils
+
+# Arch Linux
+sudo pacman -S erofs-utils
+
+# Alpine Linux
+apk add erofs-utils
+```
+
+#### 从源码构建
+
+```bash
+git clone https://github.com/erofs/erofs-utils.git
+cd erofs-utils
+./autogen.sh
+./configure
+make
+sudo make install
+```
+
+#### EROFS 工具说明
+
+| 工具 | 功能 |
+|------|------|
+| `mkfs.erofs` | 创建 EROFS 镜像 |
+| `fsck.erofs` | 检查 EROFS 镜像完整性 |
+| `dump.erofs` | 分析 EROFS 镜像结构 |
+| `erofsfuse` | 挂载 EROFS 镜像（FUSE） |
+
+### 14.4 Payload 工具
+
+用于解包 OTA 的 `payload.bin` 文件。
+
+| 工具 | 说明 | 来源 |
+|------|------|------|
+| [payload-dumper-go](https://github.com/ssut/payload-dumper-go) | Go 实现，速度快 | GitHub Releases |
+| [payload-dumper](https://github.com/vm03/payload_dumper) | Python 实现 | pip 安装 |
+| `extract_android_ota_payload` | 内置脚本 | 项目自带 |
+
+#### Python 版本安装
+
+```bash
+pip install protobuf brotli
+# 或使用 payload-dumper-go 预构建版本
+```
+
+### 14.5 从 AOSP 本地构建
+
+如果你有 AOSP 编译环境，可以自己构建工具：
+
+```bash
+# 构建 otatools
+make otatools-package
+# 输出: out/target/product/<device>/otatools.zip
+
+# 或使用 make dist
+make dist
+# 输出: out/dist/otatools.zip
+```
+
+### 14.6 组合工具链
+
+本项目的 `otatools` 目录是以下工具的组合：
+
+```
+otatools/
+├── 来自 otatools.zip (Google CI)
+│   ├── ota_from_target_files
+│   ├── signapk / apksigner
+│   ├── avbtool
+│   └── 其他签名工具
+│
+├── 来自 cvd-host_package.tar.gz (Google CI)
+│   ├── lpmake
+│   ├── lpunpack
+│   ├── lpadd
+│   └── lpdump
+│
+└── 来自系统包管理器
+    ├── mkfs.erofs
+    ├── fsck.erofs
+    └── dump.erofs
+```
+
+### 14.7 快速设置脚本
+
+创建你自己的 otatools 目录：
+
+```bash
+#!/bin/bash
+# setup_otatools.sh
+
+mkdir -p otatools/bin otatools/lib64 otatools/security
+
+# 1. 从 Google CI 下载 otatools.zip
+# 访问 https://ci.android.com/builds/branches/aosp-master/grid
+# 下载 otatools.zip 并解压到 otatools/
+
+# 2. 从 Google CI 下载 cvd-host_package.tar.gz
+# 解压并将 bin/lpmake, bin/lpunpack 等复制到 otatools/bin/
+
+# 3. 安装 EROFS 工具（如果系统没有）
+# sudo apt install erofs-utils
+
+# 4. 设置执行权限
+chmod +x otatools/bin/*
+
+echo "otatools 设置完成！"
+```
+
+### 14.8 工具清单
+
+项目运行所需的完整工具列表：
+
+| 工具 | 用途 | 来源 |
+|------|------|------|
+| `lpmake` | 创建 super.img | cvd-host_package / partition_tools |
+| `lpunpack` | 解包 super.img | cvd-host_package / partition_tools |
+| `lpdump` | 查看 super.img 信息 | cvd-host_package / partition_tools |
+| `mkfs.erofs` | 创建 EROFS 镜像 | 系统包管理器 |
+| `fsck.erofs` | 检查 EROFS 镜像 | 系统包管理器 |
+| `simg2img` | sparse image 转换 | otatools.zip |
+| `img2simg` | 转换为 sparse image | otatools.zip |
+| `avbtool` | AVB 签名工具 | otatools.zip / cvd-host_package |
+| `signapk` | APK/ZIP 签名 | otatools.zip |
+| `payload-dumper` | 解包 payload.bin | pip / payload-dumper-go |
+| `unpack_bootimg` | 解包 boot 镜像 | otatools.zip |
+| `mkbootimg` | 创建 boot 镜像 | otatools.zip |
+
+### 14.9 常见问题
+
+**Q: 为什么不把工具打包到仓库中？**
+
+A: 工具体积较大（数百 MB），且包含平台相关的二进制文件，不适合放入 Git 仓库。通过自动下载或用户自行准备更灵活。
+
+**Q: 工具版本兼容性如何？**
+
+A: Android 工具通常向前兼容。建议使用与目标 ROM Android 版本相近的工具，但大多数情况下最新版本也能工作。
+
+**Q: Windows 可以使用这些工具吗？**
+
+A: 大部分工具是 Linux x86_64 二进制文件。Windows 用户需要使用 WSL 或下载 Windows 版本的分区工具（如 Rprop/aosp15_partition_tools）。
+
+---
+
+## 15. 获取帮助
 
 - **GitHub Issues**: 报告问题和功能请求
 - **项目文档**: 查看 `docs/` 目录
