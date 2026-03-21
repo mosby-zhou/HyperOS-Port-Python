@@ -26,7 +26,8 @@ python tools/disable_encryption/disable_encryption.py --vendor-dir <vendor目录
 ```
 --vendor-dir PATH       vendor 目录路径 (必需)
 --output PATH           输出 vendor.img 路径 (可选，默认覆盖原文件)
---cluster-size SIZE     EROFS 簇大小 (可选，默认 16384)
+--cluster-size SIZE     EROFS 簇大小 (可选，默认自动检测)
+--force-cluster         强制使用指定的簇大小，不进行自动检测
 --dry-run              只显示将要修改的内容，不实际执行
 -v, --verbose           显示详细输出
 ```
