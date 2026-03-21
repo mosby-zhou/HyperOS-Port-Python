@@ -6,10 +6,15 @@ It supports automatic cluster size detection and integrates with Android build t
 """
 
 import logging
-import shutil
 import subprocess
 from pathlib import Path
 from typing import Optional
+
+# Import project's ShellRunner for cross-platform binary discovery
+import sys
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+from src.utils.shell import ShellRunner
 
 logger = logging.getLogger(__name__)
 
@@ -150,41 +155,21 @@ class ErofsPacker:
             vendor_dir: Path to the vendor directory to pack.
         """
         self.vendor_dir = vendor_dir
-        self._mkfs_erofs = self._find_mkfs_erofs()
+        self.shell = ShellRunner()
 
-    def _find_mkfs_erofs(self) -> Optional[Path]:
-        """Find mkfs.erofs tool in project or system PATH.
+    def _get_mkfs_erofs_path(self) -> Optional[Path]:
+        """Get mkfs.erofs tool path using ShellRunner's binary discovery.
 
-        Search order:
-        1. Project bin directories: bin/linux/x86_64/mkfs.erofs, bin/mkfs.erofs
-        2. System PATH via shutil.which
+        ShellRunner searches in order:
+        1. bin/{os}/{arch}/ (platform-specific tools)
+        2. otatools/bin/ (Google OTA tools)
+        3. bin/ (common tools)
+        4. System PATH
 
         Returns:
             Path to mkfs.erofs if found, None otherwise.
         """
-        # Get the project root directory (3 levels up from this file)
-        project_root = Path(__file__).parent.parent.parent
-
-        # Check project bin directories in priority order
-        bin_paths = [
-            project_root / "bin" / "linux" / "x86_64" / "mkfs.erofs",
-            project_root / "bin" / "mkfs.erofs",
-            project_root / "bin" / "linux" / "mkfs.erofs",
-        ]
-
-        for bin_path in bin_paths:
-            if bin_path.exists() and bin_path.is_file():
-                logger.debug(f"Found mkfs.erofs at: {bin_path}")
-                return bin_path
-
-        # Check system PATH
-        system_path = shutil.which("mkfs.erofs")
-        if system_path:
-            logger.debug(f"Found mkfs.erofs in system PATH: {system_path}")
-            return Path(system_path)
-
-        logger.warning("mkfs.erofs not found in project bin directories or system PATH")
-        return None
+        return self.shell.get_binary_path("mkfs.erofs")
 
     def check_prerequisites(self) -> bool:
         """Verify that all prerequisites are met for packing.
@@ -201,16 +186,13 @@ class ErofsPacker:
             logger.error(f"Vendor path is not a directory: {self.vendor_dir}")
             return False
 
-        # Check mkfs.erofs is available
-        if self._mkfs_erofs is None:
+        # Check mkfs.erofs is available (ShellRunner handles discovery)
+        mkfs_path = self.shell.get_binary_path("mkfs.erofs")
+        if not mkfs_path.exists():
             logger.error("mkfs.erofs tool not found")
             return False
 
-        if not self._mkfs_erofs.exists():
-            logger.error(f"mkfs.erofs tool not found at: {self._mkfs_erofs}")
-            return False
-
-        logger.debug("Prerequisites check passed")
+        logger.debug(f"Prerequisites check passed, mkfs.erofs: {mkfs_path}")
         return True
 
     def pack(
@@ -235,9 +217,9 @@ class ErofsPacker:
         if not self.check_prerequisites():
             return False
 
-        # Build mkfs.erofs command
+        # Build mkfs.erofs command (ShellRunner will resolve mkfs.erofs path)
         cmd = [
-            str(self._mkfs_erofs),
+            "mkfs.erofs",
             "-zlz4hc,9",  # LZ4HC compression, level 9
             "-T", "1230768000",  # Fixed timestamp (2009-01-01)
             f"-C{cluster_size}",  # Cluster size
@@ -256,32 +238,26 @@ class ErofsPacker:
         cmd.extend([str(output_path), str(self.vendor_dir)])
 
         logger.info(f"Packing EROFS image: {output_path}")
-        logger.debug(f"Command: {' '.join(cmd)}")
+        logger.debug(f"Cluster size: {cluster_size}")
 
         try:
-            # Run mkfs.erofs
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True
-            )
+            # Run mkfs.erofs via ShellRunner (handles binary discovery and cross-platform)
+            self.shell.run(cmd, check=True, capture_output=True)
 
-            if result.returncode != 0:
-                logger.error(f"mkfs.erofs failed with return code {result.returncode}")
-                if result.stderr:
-                    logger.error(f"stderr: {result.stderr}")
-                if result.stdout:
-                    logger.error(f"stdout: {result.stdout}")
+            if output_path.exists():
+                size_mb = output_path.stat().st_size / (1024 * 1024)
+                logger.info(f"Generated: {output_path} ({size_mb:.2f} MB)")
+                return True
+            else:
+                logger.error("Packing completed but output file does not exist")
                 return False
 
-            logger.info(f"Successfully created EROFS image: {output_path}")
-            if result.stdout:
-                logger.debug(f"mkfs.erofs output: {result.stdout}")
-
-            return True
-
-        except FileNotFoundError:
-            logger.error(f"mkfs.erofs not found at: {self._mkfs_erofs}")
+        except subprocess.CalledProcessError as e:
+            logger.error(f"mkfs.erofs failed with return code {e.returncode}")
+            if e.stderr:
+                logger.error(f"stderr: {e.stderr}")
+            if e.stdout:
+                logger.error(f"stdout: {e.stdout}")
             return False
         except Exception as e:
             logger.error(f"Failed to run mkfs.erofs: {e}")
