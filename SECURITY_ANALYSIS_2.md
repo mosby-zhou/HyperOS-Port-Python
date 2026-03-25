@@ -19,6 +19,7 @@
 ### 1.1 没有任何工具来源验证
 
 项目中所有二进制工具和 JAR 文件：
+
 - 无法确认是否来自官方
 - 没有存储 SHA256 校验和
 - 没有运行时完整性检查
@@ -27,6 +28,7 @@
 ### 1.2 网络下载无签名验证
 
 KernelSU 等组件从网络下载后：
+
 - 不验证数字签名
 - 直接注入到启动镜像
 - 如果下载源被入侵 → 用户设备被完全控制
@@ -40,6 +42,7 @@ KernelSU 等组件从网络下载后：
 **位置**: `bin/linux/x86_64/payload-dumper`
 
 **代码调用位置**:
+
 - 文件: `src/core/rom/extractors.py`
 - 行号: 25
 
@@ -50,6 +53,7 @@ package.shell.run(cmd)
 ```
 
 **功能说明**:
+
 - 解包 `payload.bin` 格式的 ROM 包
 - 提取所有分区镜像 (system, vendor, product, boot 等)
 - 是 ROM 处理流程的第一步
@@ -72,21 +76,22 @@ package.shell.run(cmd)
 
 **代码调用位置**:
 
-| 文件 | 行号 | 操作 |
-|------|------|------|
-| `firmware_modifier.py` | 110 | 解包 vendor_boot.img |
-| `firmware_modifier.py` | 126 | 解压缩 ramdisk |
-| `firmware_modifier.py` | 155 | cpio extract 操作 |
-| `firmware_modifier.py` | 184 | 添加文件到 cpio |
-| `firmware_modifier.py` | 203 | DTB patch |
-| `firmware_modifier.py` | 222 | repack vendor_boot |
-| `firmware_modifier.py` | 334 | 解包 boot.img 分析 KMI |
-| `firmware_modifier.py` | 454 | 解包 init_boot 注入 KSU |
-| `firmware_modifier.py` | 463-495 | KSU 注入完整流程 |
-| `wild_boost.py` | 85 | 解包 boot.img |
-| `wild_boost.py` | 204-363 | vendor_boot 完整操作流程 |
+| 文件                   | 行号    | 操作                     |
+| ---------------------- | ------- | ------------------------ |
+| `firmware_modifier.py` | 110     | 解包 vendor_boot.img     |
+| `firmware_modifier.py` | 126     | 解压缩 ramdisk           |
+| `firmware_modifier.py` | 155     | cpio extract 操作        |
+| `firmware_modifier.py` | 184     | 添加文件到 cpio          |
+| `firmware_modifier.py` | 203     | DTB patch                |
+| `firmware_modifier.py` | 222     | repack vendor_boot       |
+| `firmware_modifier.py` | 334     | 解包 boot.img 分析 KMI   |
+| `firmware_modifier.py` | 454     | 解包 init_boot 注入 KSU  |
+| `firmware_modifier.py` | 463-495 | KSU 注入完整流程         |
+| `wild_boost.py`        | 85      | 解包 boot.img            |
+| `wild_boost.py`        | 204-363 | vendor_boot 完整操作流程 |
 
 **功能说明**:
+
 - 解包/打包 boot.img, vendor_boot.img, init_boot.img
 - 操作 ramdisk.cpio (启动脚本和模块)
 - 注入 KernelSU 到启动镜像
@@ -109,6 +114,7 @@ package.shell.run(cmd)
 **位置**: `bin/linux/x86_64/lpunpack`
 
 **代码调用位置**:
+
 - 文件: `src/core/rom/extractors.py`
 - 行号: 166, 180, 190
 
@@ -122,6 +128,7 @@ package.shell.run(["lpunpack", str(super_img), str(package.images_dir)])
 ```
 
 **功能说明**:
+
 - 解包 super.img 逻辑分区
 - 提取 system, vendor, product, odm 等分区
 
@@ -140,6 +147,7 @@ package.shell.run(["lpunpack", str(super_img), str(package.images_dir)])
 **位置**: `bin/linux/x86_64/brotli`
 
 **代码调用位置**:
+
 - 文件: `src/core/rom/extractors.py`
 - 行号: 88
 
@@ -149,10 +157,12 @@ package.shell.run(cmd)
 ```
 
 **功能说明**:
+
 - 解压 `.new.dat.br` 文件
 - 老版本 ROM 使用此格式
 
 **风险分析**:
+
 - 解压的数据最终会转换为系统镜像
 - 如果被替换，可注入恶意数据
 
@@ -165,6 +175,7 @@ package.shell.run(cmd)
 **位置**: `bin/linux/x86_64/mkfs.erofs`
 
 **代码调用位置**:
+
 - 文件: `src/core/packer.py`
 - 行号: 102-117
 
@@ -183,6 +194,7 @@ self.shell.run(cmd)
 ```
 
 **功能说明**:
+
 - 将目录打包为 EROFS 格式镜像
 - 用于打包 system, vendor, product 等分区
 
@@ -202,6 +214,7 @@ self.shell.run(cmd)
 **位置**: `bin/linux/x86_64/mke2fs`, `bin/linux/x86_64/e2fsdroid`
 
 **代码调用位置**:
+
 - 文件: `src/core/packer.py`
 - 行号: 195-235
 
@@ -226,10 +239,12 @@ self.shell.run(e2fs_cmd)
 ```
 
 **功能说明**:
+
 - 创建 EXT4 格式镜像
 - 写入文件内容、权限、SELinux 标签
 
 **风险分析**:
+
 - 可在系统分区注入任意文件
 - 可设置任意权限和 SELinux 上下文
 
@@ -242,6 +257,7 @@ self.shell.run(e2fs_cmd)
 **位置**: `bin/linux/x86_64/simg2img`
 
 **代码调用位置**:
+
 - 文件: `src/core/rom/utils.py`
 - 行号: 65, 77, 91
 
@@ -255,10 +271,12 @@ shell.run([str(simg2img_bin), str(target_super), str(temp_raw)])
 ```
 
 **功能说明**:
+
 - 转换稀疏镜像 (sparse image) 为原始镜像
 - 合并分片的镜像文件
 
 **风险分析**:
+
 - 只做格式转换，不修改内容
 - 风险相对较低，但仍需验证来源
 
@@ -271,6 +289,7 @@ shell.run([str(simg2img_bin), str(target_super), str(temp_raw)])
 **位置**: `bin/linux/x86_64/aapt2`
 
 **代码调用位置**:
+
 - 文件: `src/core/context.py`
 - 行号: 455-467
 
@@ -281,10 +300,12 @@ return result.stdout.strip()  # 返回 APK 包名
 ```
 
 **功能说明**:
+
 - 解析 APK 包名
 - 用于 APK 查找缓存
 
 **风险分析**:
+
 - 只读取信息，不修改文件
 - 如果被替换，可能返回错误的包名
 - 可能导致错误的 APK 被修改
@@ -298,6 +319,7 @@ return result.stdout.strip()  # 返回 APK 包名
 **位置**: `otatools/bin/lpmake`
 
 **代码调用位置**:
+
 - 文件: `src/core/packer.py`
 - 行号: 265-356
 
@@ -316,10 +338,12 @@ self.shell.run(base_args)
 ```
 
 **功能说明**:
+
 - 打包 super.img
 - 定义动态分区布局
 
 **风险分析**:
+
 - 决定所有动态分区的布局和大小
 - 可篡改分区元数据
 
@@ -334,6 +358,7 @@ self.shell.run(base_args)
 **位置**: `bin/APKEditor.jar`
 
 **代码调用位置**:
+
 - 文件: `src/core/modifiers/plugins/apk/base.py`
 - 行号: 223, 254
 
@@ -354,6 +379,7 @@ self.ctx.shell.run_java_jar(
 **位置**: `bin/apktool/apktool_2.12.1.jar`
 
 **代码调用位置**:
+
 - 文件: `src/core/modifiers/framework/base.py`
 - 行号: 43, 49
 
@@ -362,6 +388,7 @@ self.ctx.shell.run_java_jar(
 **位置**: `bin/smali.jar`, `bin/baksmali.jar`
 
 **功能说明**:
+
 - 反编译/重编译 APK
 - 修改 APK 内的 smali 代码
 - 修改 resources.arsc
@@ -374,6 +401,7 @@ self.ctx.shell.run_java_jar(
 | Java 执行环境 | 可执行任意 Java 代码 |
 
 **官方来源**:
+
 - APKEditor: https://github.com/REAndroid/APKEditor/releases
 - apktool: https://github.com/iBotPeaches/Apktool/releases
 - smali/baksmali: https://github.com/JesusFreke/smali/releases
@@ -385,6 +413,7 @@ self.ctx.shell.run_java_jar(
 ### 3.1 KernelSU 下载
 
 **代码调用位置**:
+
 - 文件: `src/core/modifiers/firmware_modifier.py`
 - 行号: 404-425
 
@@ -405,6 +434,7 @@ for asset in assets:
 ```
 
 **功能说明**:
+
 - 从 GitHub API 获取最新版本
 - 下载 `ksuinit` 和 `kernelsu.ko`
 - 直接注入到 boot.img 或 init_boot.img
@@ -419,6 +449,7 @@ for asset in assets:
 | 完全控制 | 恶意 KSU 可完全控制设备 |
 
 **攻击链**:
+
 ```
 攻击者控制下载源/中间人攻击
     → 注入恶意 kernelsu.ko
@@ -434,6 +465,7 @@ for asset in assets:
 ### 3.2 otatools 下载
 
 **代码调用位置**:
+
 - 文件: `src/utils/otatools_manager.py`
 - 行号: 12
 
@@ -442,6 +474,7 @@ DEFAULT_URL = "https://github.com/toraidl/HyperOS-Port-Python/releases/download/
 ```
 
 **风险分析**:
+
 - otatools 包含大量二进制工具
 - 这些工具会被直接执行
 - URL 指向项目自身 Release
@@ -454,15 +487,15 @@ DEFAULT_URL = "https://github.com/toraidl/HyperOS-Port-Python/releases/download/
 
 **位置**: `devices/common/`
 
-| 文件 | 内容 | 风险 |
-|------|------|------|
-| `PropsHook.zip` | APK，注入系统 | 高 - 可执行任意代码 |
-| `wild_boost_5.10.zip` | 内核模块 | 高 - 内核级权限 |
-| `wild_boost_5.15.zip` | 内核模块 | 高 - 内核级权限 |
-| `pif_patch.zip` | Play Integrity 补丁 | 中 - 修改系统属性 |
-| `pif_patch_v2.zip` | Play Integrity 补丁 | 中 |
-| `xeutoolbox.zip` | 工具包 | 中 - 需验证来源 |
-| `otacerts.zip` | 证书文件 | 中 |
+| 文件                  | 内容                | 风险                |
+| --------------------- | ------------------- | ------------------- |
+| `PropsHook.zip`       | APK，注入系统       | 高 - 可执行任意代码 |
+| `wild_boost_5.10.zip` | 内核模块            | 高 - 内核级权限     |
+| `wild_boost_5.15.zip` | 内核模块            | 高 - 内核级权限     |
+| `pif_patch.zip`       | Play Integrity 补丁 | 中 - 修改系统属性   |
+| `pif_patch_v2.zip`    | Play Integrity 补丁 | 中                  |
+| `xeutoolbox.zip`      | 工具包              | 中 - 需验证来源     |
+| `otacerts.zip`        | 证书文件            | 中                  |
 
 ---
 
@@ -528,26 +561,26 @@ DEFAULT_URL = "https://github.com/toraidl/HyperOS-Port-Python/releases/download/
 
 ## 六、风险等级汇总
 
-| 工具/资源 | 风险等级 | 处理内容 | 官方来源 |
-|-----------|----------|----------|----------|
-| `payload-dumper` | 🔴 极高 | 整个 ROM 解包 | ssut/payload-dumper-go |
-| `magiskboot` | 🔴 极高 | 启动镜像操作 | topjohnwu/Magisk |
-| **KernelSU 下载** | 🔴 极高 | 网络下载+注入启动镜像 | tiann/KernelSU |
-| `lpunpack` | 🔴 高 | 系统分区解包 | AOSP |
-| `brotli` | 🔴 高 | 镜像数据解压 | google/brotli |
-| `mkfs.erofs` | 🔴 高 | 系统分区打包 | erofs/erofs-utils |
-| `mke2fs` | 🔴 高 | EXT4 创建 | e2fsprogs |
-| `e2fsdroid` | 🔴 高 | EXT4 写入 | AOSP |
-| `lpmake` | 🔴 高 | super.img 打包 | AOSP otatools |
-| `APKEditor.jar` | 🔴 高 | APK 修改 | REAndroid/APKEditor |
-| `apktool.jar` | 🔴 高 | APK 反编译 | iBotPeaches/Apktool |
-| `smali.jar` | 🔴 高 | Smali 汇编 | JesusFreke/smali |
-| `baksmali.jar` | 🔴 高 | Smali 反汇编 | JesusFreke/smali |
-| `wild_boost_*.zip` | 🔴 高 | 内核模块 | 需验证来源 |
-| `PropsHook.zip` | 🔴 高 | 系统 APK | 需验证来源 |
-| `simg2img` | ⚠️ 中 | 格式转换 | AOSP |
-| `aapt2` | ⚠️ 中 | 信息读取 | Android SDK |
-| `pif_patch*.zip` | ⚠️ 中 | 属性修改 | 需验证来源 |
+| 工具/资源          | 风险等级 | 处理内容              | 官方来源               |
+| ------------------ | -------- | --------------------- | ---------------------- |
+| `payload-dumper`   | 🔴 极高  | 整个 ROM 解包         | ssut/payload-dumper-go |
+| `magiskboot`       | 🔴 极高  | 启动镜像操作          | topjohnwu/Magisk       |
+| `KernelSU`         | 🔴 极高  | 网络下载+注入启动镜像 | tiann/KernelSU         |
+| `lpunpack`         | 🔴 高    | 系统分区解包          | AOSP                   |
+| `brotli`           | 🔴 高    | 镜像数据解压          | google/brotli          |
+| `mkfs.erofs`       | 🔴 高    | 系统分区打包          | erofs/erofs-utils      |
+| `mke2fs`           | 🔴 高    | EXT4 创建             | e2fsprogs              |
+| `e2fsdroid`        | 🔴 高    | EXT4 写入             | AOSP                   |
+| `lpmake`           | 🔴 高    | super.img 打包        | AOSP otatools          |
+| `APKEditor.jar`    | 🔴 高    | APK 修改              | REAndroid/APKEditor    |
+| `apktool.jar`      | 🔴 高    | APK 反编译            | iBotPeaches/Apktool    |
+| `smali.jar`        | 🔴 高    | Smali 汇编            | JesusFreke/smali       |
+| `baksmali.jar`     | 🔴 高    | Smali 反汇编          | JesusFreke/smali       |
+| `wild_boost_*.zip` | 🔴 高    | 内核模块              | 需验证来源             |
+| `PropsHook.zip`    | 🔴 高    | 系统 APK              | 需验证来源             |
+| `simg2img`         | ⚠️ 中    | 格式转换              | AOSP                   |
+| `aapt2`            | ⚠️ 中    | 信息读取              | Android SDK            |
+| `pif_patch*.zip`   | ⚠️ 中    | 属性修改              | 需验证来源             |
 
 ---
 
@@ -616,6 +649,7 @@ https://github.com/tiann/KernelSU/releases
    - 删除项目中现有的未验证工具
 
 2. **验证 JAR 文件**
+
    ```bash
    # 示例：验证 apktool
    sha256sum bin/apktool/apktool_2.12.1.jar
@@ -705,6 +739,7 @@ def download_ksu_with_verification():
 ### 9.2 风险后果
 
 如果任何工具被替换为恶意版本：
+
 - 用户设备可被完全控制
 - 可安装持久化后门
 - 可窃取所有数据
@@ -712,13 +747,13 @@ def download_ksu_with_verification():
 
 ### 9.3 建议行动优先级
 
-| 优先级 | 行动 |
-|--------|------|
+| 优先级   | 行动                                |
+| -------- | ----------------------------------- |
 | **立即** | 从官方重新下载所有工具并验证 SHA256 |
-| **立即** | 禁用自动网络下载功能 |
-| **短期** | 添加工具完整性校验代码 |
-| **中期** | 实现 KernelSU 签名验证 |
-| **长期** | 建立自动化安全审计流程 |
+| **立即** | 禁用自动网络下载功能                |
+| **短期** | 添加工具完整性校验代码              |
+| **中期** | 实现 KernelSU 签名验证              |
+| **长期** | 建立自动化安全审计流程              |
 
 ---
 
