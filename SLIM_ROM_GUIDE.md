@@ -42,6 +42,7 @@ pip install -r requirements.txt
 cd /home/zhouc/code/2026/HyperOS-Port-Python
 
 sudo python3 main.py \
+    --project mayfly \
     --stock /path/to/mayfly_hyperos_xxx.tgz \
     --pack-type super \
     --clean \
@@ -49,6 +50,7 @@ sudo python3 main.py \
 ```
 
 **参数说明**:
+- `--project`: 项目名称 (必填)，对应 roms/<project>/ 目录
 - `--stock`: 线刷包路径 (支持 .tgz / .zip / 目录)
 - `--pack-type super`: 生成线刷格式的 super.img
 - `--clean`: 清理旧的工作目录
@@ -56,7 +58,7 @@ sudo python3 main.py \
 
 **预期输出**:
 ```
-build/target/
+build/mayfly/target/
 ├── system/          # 系统分区
 ├── product/         # 产品分区 (预装应用主要在此)
 ├── vendor/          # 厂商分区
@@ -161,6 +163,7 @@ sudo nano build/target/config/product_file_contexts
 cd /home/zhouc/code/2026/HyperOS-Port-Python
 
 sudo python3 main.py \
+    --project mayfly \
     --stock /path/to/mayfly_hyperos_xxx.tgz \
     --pack-type super \
     --phases repack
@@ -194,18 +197,20 @@ out/
 set -e
 
 PROJECT_DIR="/home/zhouc/code/2026/HyperOS-Port-Python"
-ROM_PATH="$1"
-APPS_TO_DELETE="$2"
+PROJECT_NAME="$1"
+ROM_PATH="$2"
+APPS_TO_DELETE="$3"
 
-if [ -z "$ROM_PATH" ]; then
-    echo "用法: ./slim_mayfly.sh <线刷包路径> [应用列表文件]"
+if [ -z "$PROJECT_NAME" ] || [ -z "$ROM_PATH" ]; then
+    echo "用法: ./slim_mayfly.sh <项目名> <线刷包路径> [应用列表文件]"
+    echo "示例: ./slim_mayfly.sh mayfly /path/to/rom.tgz apps.txt"
     exit 1
 fi
 
 cd "$PROJECT_DIR"
 
 echo "=== 步骤 1: 解包 ROM ==="
-sudo python3 main.py --stock "$ROM_PATH" --pack-type super --clean --phases system
+sudo python3 main.py --project "$PROJECT_NAME" --stock "$ROM_PATH" --pack-type super --clean --phases system
 
 echo "=== 步骤 2: 删除应用 ==="
 if [ -f "$APPS_TO_DELETE" ]; then
@@ -213,12 +218,12 @@ if [ -f "$APPS_TO_DELETE" ]; then
         [ -z "$app_path" ] && continue
         [[ "$app_path" == \#* ]] && continue
         echo "删除: $app_path"
-        sudo rm -rf "build/target/$app_path"
+        sudo rm -rf "build/$PROJECT_NAME/target/$app_path"
     done < "$APPS_TO_DELETE"
 fi
 
 echo "=== 步骤 3: 重新打包 ==="
-sudo python3 main.py --stock "$ROM_PATH" --pack-type super --phases repack
+sudo python3 main.py --project "$PROJECT_NAME" --stock "$ROM_PATH" --pack-type super --phases repack
 
 echo "=== 完成! ==="
 echo "输出文件: out/mayfly-hybrid-*.zip"
@@ -237,7 +242,7 @@ system/app/SomeApp
 **使用方法**:
 ```bash
 chmod +x slim_mayfly.sh
-./slim_mayfly.sh /path/to/mayfly.tgz apps_to_delete.txt
+./slim_mayfly.sh mayfly /path/to/mayfly.tgz apps_to_delete.txt
 ```
 
 ---
