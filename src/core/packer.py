@@ -8,7 +8,7 @@ import subprocess
 import zipfile
 from pathlib import Path
 from typing import List, Optional, Dict, Union, Any, Tuple
-from src.utils.shell import ShellRunner
+from src.utils.shell import ShellRunner, ToolNotFoundError
 from src.utils.fspatch import patch_fs_config
 from src.utils.contextpatch import ContextPatcher
 from datetime import datetime
@@ -31,6 +31,22 @@ class Repacker:
         self.images_out: Path = self.product_out / "IMAGES"
         self.meta_out: Path = self.product_out / "META"
         self.ota_tools_dir: Path = Path("otatools").resolve()
+
+        # Pre-resolve binary paths (will raise ToolNotFoundError if missing)
+        self._resolve_tool_paths()
+
+    def _resolve_tool_paths(self) -> None:
+        """Pre-resolve all required binary tool paths."""
+        # Required tools for packing
+        self._mkfs_erofs = self.shell.get_binary_path("mkfs.erofs", required=True)
+        self._mke2fs = self.shell.get_binary_path("mke2fs", required=True)
+        self._e2fsdroid = self.shell.get_binary_path("e2fsdroid", required=True)
+        self._lpmake = self.shell.get_binary_path("lpmake", required=True)
+
+        # Optional tools
+        self._resize2fs = self.shell.get_binary_path("resize2fs", required=False)
+        self._tune2fs = self.shell.get_binary_path("tune2fs", required=False)
+        self._zstd = self.shell.get_binary_path("zstd", required=False)
 
     def pack_all(self, pack_type: str = "EROFS", is_rw: bool = False) -> None:
         """
@@ -100,7 +116,7 @@ class Repacker:
     ) -> None:
         """Pack EROFS image"""
         cmd: List[str] = [
-            "mkfs.erofs",
+            str(self._mkfs_erofs),
             "-zlz4hc,9",
             "-T",
             self.fix_timestamp,
@@ -114,7 +130,7 @@ class Repacker:
             str(src_dir),
         ]
         try:
-            self.shell.run(cmd)
+            self.shell.run(cmd, tool_required=False)  # Already resolved
             self.logger.info(f"Successfully packed {part_name}.img (EROFS)")
         except subprocess.CalledProcessError as e:
             self.logger.error(f"Failed to pack {part_name}: {e}")
@@ -155,7 +171,10 @@ class Repacker:
         self._make_ext4_image(
             part_name, src_dir, img_output, size, inode_count, fs_config, file_contexts, is_rw
         )
-        self.shell.run(["resize2fs", "-f", "-M", str(img_output)])
+
+        # resize2fs is optional - check if available
+        if self._resize2fs.exists():
+            self.shell.run([str(self._resize2fs), "-f", "-M", str(img_output)], tool_required=False)
 
         if part_name == "mi_ext":
             return
@@ -178,7 +197,8 @@ class Repacker:
                 file_contexts,
                 is_rw,
             )
-            self.shell.run(["resize2fs", "-f", "-M", str(img_output)])
+            if self._resize2fs.exists():
+                self.shell.run([str(self._resize2fs), "-f", "-M", str(img_output)], tool_required=False)
 
     def _make_ext4_image(
         self,
@@ -193,7 +213,7 @@ class Repacker:
     ) -> None:
         """Execute mke2fs and e2fsdroid"""
         mkfs_cmd: List[str] = [
-            "mke2fs",
+            str(self._mke2fs),
             "-O",
             "^has_journal",
             "-L",
@@ -213,10 +233,10 @@ class Repacker:
             str(img_path),
             str(size // 4096),
         ]
-        self.shell.run(mkfs_cmd)
+        self.shell.run(mkfs_cmd, tool_required=False)
 
         e2fs_cmd: List[str] = [
-            "e2fsdroid",
+            str(self._e2fsdroid),
             "-e",
             "-T",
             self.fix_timestamp,
@@ -232,25 +252,28 @@ class Repacker:
         ]
         if not is_rw:
             e2fs_cmd.insert(-1, "-s")
-        self.shell.run(e2fs_cmd)
+        self.shell.run(e2fs_cmd, tool_required=False)
 
     def _get_dir_size(self, path: Path) -> int:
-        """Calculate directory size using du -sb"""
+        """Calculate directory size using Python (cross-platform)."""
         try:
-            output: str = subprocess.check_output(["du", "-sb", str(path)], text=True)
-            return int(output.split()[0])
-        except (subprocess.SubprocessError, ValueError, FileNotFoundError) as e:
-            self.logger.warning(f"du command failed, falling back to python: {e}")
             total: int = 0
             for p in path.rglob("*"):
                 if p.is_file() and not p.is_symlink():
                     total += p.stat().st_size
             return total if total > 0 else 4096
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate directory size: {e}")
+            return 4096
 
     def _get_free_blocks(self, img_path: Path) -> int:
         """Parse tune2fs -l output to get Free blocks"""
+        if not self._tune2fs.exists():
+            return 0
         try:
-            output: str = subprocess.check_output(["tune2fs", "-l", str(img_path)], text=True)
+            output: str = subprocess.check_output(
+                [str(self._tune2fs), "-l", str(img_path)], text=True
+            )
             for line in output.splitlines():
                 if "Free blocks:" in line:
                     return int(line.split(":")[1].strip())
@@ -262,16 +285,11 @@ class Repacker:
         """Pack super.img for non-payload.bin ROMs"""
         self.logger.info("Packing super.img...")
 
-        lpmake_path: Path = self.ota_tools_dir / "bin" / "lpmake"
-        if not lpmake_path.exists():
-            self.logger.error(f"lpmake not found at {lpmake_path}")
-            return
-
         super_img: Path = self.ctx.target_dir / "super.img"
         super_size: int = self._get_super_size()
 
         base_args: List[str] = [
-            str(lpmake_path),
+            str(self._lpmake),
             "--metadata-size",
             "65536",
             "--super-name",
@@ -355,7 +373,7 @@ class Repacker:
                     )
 
         try:
-            self.shell.run(base_args)
+            self.shell.run(base_args, tool_required=False)
             self.logger.info("super.img generated successfully.")
         except subprocess.CalledProcessError as e:
             self.logger.error(f"Failed to generate super.img: {e}")
@@ -364,8 +382,11 @@ class Repacker:
         self.logger.info("Compressing super.img to super.zst...")
         zst_path: Path = self.ctx.target_dir / "super.zst"
         try:
-            self.shell.run(["zstd", "--rm", str(super_img), "-o", str(zst_path)])
-            self.logger.info("Compressed super.zst generated.")
+            if self._zstd.exists():
+                self.shell.run([str(self._zstd), "--rm", str(super_img), "-o", str(zst_path)], tool_required=False)
+                self.logger.info("Compressed super.zst generated.")
+            else:
+                self.logger.warning("zstd not found, skipping compression.")
         except subprocess.CalledProcessError as e:
             self.logger.warning(f"zstd compression failed: {e}.")
 
