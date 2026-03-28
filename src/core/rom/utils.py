@@ -7,6 +7,8 @@ import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Union
 
+from src.utils.shell import ToolNotFoundError
+
 if TYPE_CHECKING:
     from .package import RomPackage
 
@@ -39,21 +41,13 @@ def process_sparse_images(images_dir: Path, logger: logging.Logger, shell) -> No
         logger: Logger instance for output.
         shell: ShellRunner instance for command execution.
     """
-    candidate_paths = [
-        Path("bin/linux/x86_64/simg2img").resolve(),
-        Path("./simg2img"),
-    ]
-
-    simg2img_bin: Union[str, Path] = "simg2img"
-    for path_candidate in candidate_paths:
-        if path_candidate.exists():
-            simg2img_bin = path_candidate
-            break
-
-    if isinstance(simg2img_bin, Path):
-        logger.info(f"Using simg2img binary: {simg2img_bin}")
-    else:
-        logger.info("Using simg2img from system PATH")
+    # Use ShellRunner to find simg2img
+    try:
+        simg2img_bin = shell.get_binary_path("simg2img", required=True)
+        logger.info(f"Using simg2img: {simg2img_bin}")
+    except ToolNotFoundError as e:
+        logger.error(f"simg2img not found in official tools directory: {e}")
+        raise
 
     # 1. Handle super.img
     super_chunks = sorted(list(images_dir.glob("super.img.*")))
@@ -63,7 +57,7 @@ def process_sparse_images(images_dir: Path, logger: logging.Logger, shell) -> No
         logger.info(f"Merging sparse super images: {[c.name for c in super_chunks]}...")
         try:
             cmd = [str(simg2img_bin)] + [str(c) for c in super_chunks] + [str(target_super)]
-            shell.run(cmd)
+            shell.run(cmd, tool_required=False)
             for c in super_chunks:
                 os.unlink(c)
         except Exception as e:
@@ -74,7 +68,7 @@ def process_sparse_images(images_dir: Path, logger: logging.Logger, shell) -> No
         logger.info("converting super.img to raw (if sparse)...")
         temp_raw = images_dir / "super.raw.img"
         try:
-            shell.run([str(simg2img_bin), str(target_super), str(temp_raw)])
+            shell.run([str(simg2img_bin), str(target_super), str(temp_raw)], tool_required=False)
             shutil.move(temp_raw, target_super)
         except Exception as e:
             logger.warning(f"simg2img conversion skipped/failed: {e}")
@@ -89,7 +83,7 @@ def process_sparse_images(images_dir: Path, logger: logging.Logger, shell) -> No
         logger.info("Merging sparse cust images...")
         try:
             cmd = [str(simg2img_bin)] + [str(c) for c in cust_chunks] + [str(target_cust)]
-            shell.run(cmd)
+            shell.run(cmd, tool_required=False)
             for c in cust_chunks:
                 os.unlink(c)
         except Exception as e:
