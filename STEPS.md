@@ -23,7 +23,7 @@
 **实际执行的命令**:
 ```bash
 # 1. 初始化工作目录
-sudo python3 main.py --stock roms/12su/thor_images_OS3.0.2.0.VLACNXM_15.0 --pack-type super --clean --phases system
+sudo python3 main.py --project 12su --stock roms/12su/thor_images_OS3.0.2.0.VLACNXM_15.0 --pack-type super --clean --phases system
 
 # 2. 转换 sparse 格式为 raw 格式
 sudo bin/linux/x86_64/simg2img build/target/repack_images/super.img build/target/repack_images/super_raw.img

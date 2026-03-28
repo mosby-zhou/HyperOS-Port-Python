@@ -149,7 +149,7 @@ sudo python3 main.py --project <项目名> --stock <底包路径> --port <移植
 **CLI 覆盖示例:**
 ```bash
 # 覆盖打包类型和文件系统
-sudo python3 main.py --stock stock.zip --port port.zip --pack-type super --fs-type ext4
+sudo python3 main.py --project <项目名> --stock stock.zip --port port.zip --pack-type super --fs-type ext4
 ```
 
 ### 2. Wild Boost 支持

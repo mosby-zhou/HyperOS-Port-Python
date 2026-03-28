@@ -91,7 +91,7 @@ sudo python3 main.py --project 17u --stock roms/17u/xxx.tgz --port roms/17u/yyy.
 将移植包 ROM 移植到底包设备：
 
 ```bash
-sudo python3 main.py --stock <底包路径> --port <移植包路径>
+sudo python3 main.py --project <项目名> --stock <底包路径> --port <移植包路径>
 ```
 
 **示例**:
@@ -144,7 +144,7 @@ sudo python3 main.py --project fuxi --stock fuxi_hyperos_2.0.zip
 适用于 Recovery/OTA 刷入：
 
 ```bash
-sudo python3 main.py --stock stock.zip --port port.zip --pack-type payload
+sudo python3 main.py --project <项目名> --stock stock.zip --port port.zip --pack-type payload
 ```
 
 **输出**:
@@ -161,7 +161,7 @@ out/
 适用于 Fastboot/混合刷入：
 
 ```bash
-sudo python3 main.py --stock stock.zip --port port.zip --pack-type super
+sudo python3 main.py --project <项目名> --stock stock.zip --port port.zip --pack-type super
 ```
 
 **输出**:
@@ -202,7 +202,7 @@ Wild Boost 目前需要通过配置文件启用。
 **方法一：CLI 参数**
 
 ```bash
-sudo python3 main.py --stock stock.zip --ksu
+sudo python3 main.py --project <项目名> --stock stock.zip --ksu
 ```
 
 **方法二：设备配置**
@@ -243,16 +243,16 @@ sudo python3 main.py \
 
 ```bash
 # 仅执行系统级修改
-sudo python3 main.py --stock stock.zip --port port.zip --phases system
+sudo python3 main.py --project <项目名> --stock stock.zip --port port.zip --phases system
 
 # 仅执行 APK 修改
-sudo python3 main.py --stock stock.zip --port port.zip --phases apk
+sudo python3 main.py --project <项目名> --stock stock.zip --port port.zip --phases apk
 
 # 执行多个阶段 (逗号分隔)
-sudo python3 main.py --stock stock.zip --phases system,apk
+sudo python3 main.py --project <项目名> --stock stock.zip --phases system,apk
 
 # 仅打包，跳过修改 (假设已有工作目录)
-sudo python3 main.py --stock stock.zip --phases repack
+sudo python3 main.py --project <项目名> --stock stock.zip --phases repack
 ```
 
 ### 6.2 阶段说明
@@ -377,7 +377,7 @@ sudo python3 main.py \
 ### 8.3 调试模式
 
 ```bash
-sudo python3 main.py --stock stock.zip --debug
+sudo python3 main.py --project <项目名> --stock stock.zip --debug
 ```
 
 日志输出到 `porting.log` 和控制台。
@@ -415,7 +415,7 @@ python3 -c "from src.utils.otatools_manager import OtaToolsManager; OtaToolsMana
 
 ```bash
 # 使用 sudo 运行
-sudo python3 main.py --stock stock.zip
+sudo python3 main.py --project <项目名> --stock stock.zip
 
 # 或赋予工作目录权限
 sudo chown -R $USER:$USER build/
@@ -432,7 +432,7 @@ sudo chown -R $USER:$USER build/
 rm -rf build/
 
 # 使用其他磁盘
-sudo python3 main.py --stock stock.zip --work-dir /mnt/external/work
+sudo python3 main.py --project <项目名> --stock stock.zip --work-dir /mnt/external/work
 ```
 
 ### 9.4 ROM 类型识别失败
@@ -458,7 +458,7 @@ unzip -l ROM.zip | head -20
 ```bash
 # 检查文件系统类型
 # 某些分区可能需要 ext4
-sudo python3 main.py --stock stock.zip --fs-type ext4
+sudo python3 main.py --project <项目名> --stock stock.zip --fs-type ext4
 ```
 
 ---

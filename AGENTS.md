@@ -408,7 +408,7 @@ python3 -c "from src.utils.otatools_manager import OtaToolsManager; OtaToolsMana
 
 ```bash
 # 使用 sudo 运行
-sudo python3 main.py --stock stock.zip
+sudo python3 main.py --project <项目名> --stock stock.zip
 ```
 
 ### 磁盘空间不足
@@ -418,7 +418,7 @@ sudo python3 main.py --stock stock.zip
 rm -rf build/
 
 # 使用其他磁盘
-sudo python3 main.py --stock stock.zip --work-dir /mnt/external/work
+sudo python3 main.py --project <项目名> --stock stock.zip --work-dir /mnt/external/work
 ```
 
 ---

@@ -309,7 +309,7 @@ df -h build/
 ls -la build/target/product/
 
 # 使用 ext4 格式重新打包
-sudo python3 main.py --stock mayfly.tgz --pack-type super --fs-type ext4 --phases repack
+sudo python3 main.py --project <项目名> --stock mayfly.tgz --pack-type super --fs-type ext4 --phases repack
 ```
 
 ### 6.2 刷入后无法启动

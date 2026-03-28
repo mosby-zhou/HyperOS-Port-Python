@@ -150,7 +150,7 @@ Control device-specific settings including wild_boost, pack type, and KSU.
 **CLI Overrides:**
 ```bash
 # Override pack type and filesystem
-sudo python3 main.py --stock stock.zip --port port.zip --pack-type super --fs-type ext4
+sudo python3 main.py --project <project_name> --stock stock.zip --port port.zip --pack-type super --fs-type ext4
 ```
 
 ### 2. Wild Boost Support
