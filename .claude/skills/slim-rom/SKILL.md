@@ -46,32 +46,34 @@ description: |
 ```bash
 cd /home/zhouc/code/2026/HyperOS-Port-Python
 
-sudo python3 main.py --stock <ROM目录路径> --pack-type super --clean --phases system
+sudo python3 main.py --project <PROJECT_NAME> --stock <ROM目录路径> --pack-type super --clean --phases system
 ```
+
+> **注意：** `<PROJECT_NAME>` 对应 `roms/<PROJECT_NAME>/` 目录名。
 
 ### Step 1.2: 转换 sparse 格式为 raw 格式
 
 ```bash
-sudo bin/linux/x86_64/simg2img build/target/repack_images/super.img build/target/repack_images/super_raw.img
+sudo bin/linux/x86_64/simg2img build/{project}/target/repack_images/super.img build/{project}/target/repack_images/super_raw.img
 ```
 
 ### Step 1.3: 解包 super.img
 
 ```bash
-sudo python3 src/utils/lpunpack.py build/target/repack_images/super_raw.img build/target/
+sudo python3 src/utils/lpunpack.py build/{project}/target/repack_images/super_raw.img build/{project}/target/
 ```
 
 ### Step 1.4: 解包各分区文件系统
 
 ```bash
 # 解包所有分区
-sudo bin/linux/x86_64/extract.erofs -x -i build/target/product_a.img -o build/target/product
-sudo bin/linux/x86_64/extract.erofs -x -i build/target/system_a.img -o build/target/system
-sudo bin/linux/x86_64/extract.erofs -x -i build/target/vendor_a.img -o build/target/vendor
-sudo bin/linux/x86_64/extract.erofs -x -i build/target/system_ext_a.img -o build/target/system_ext
-sudo bin/linux/x86_64/extract.erofs -x -i build/target/odm_a.img -o build/target/odm
-sudo bin/linux/x86_64/extract.erofs -x -i build/target/vendor_dlkm_a.img -o build/target/vendor_dlkm
-sudo bin/linux/x86_64/extract.erofs -x -i build/target/mi_ext_a.img -o build/target/mi_ext
+sudo bin/linux/x86_64/extract.erofs -x -i build/{project}/target/product_a.img -o build/{project}/target/product
+sudo bin/linux/x86_64/extract.erofs -x -i build/{project}/target/system_a.img -o build/{project}/target/system
+sudo bin/linux/x86_64/extract.erofs -x -i build/{project}/target/vendor_a.img -o build/{project}/target/vendor
+sudo bin/linux/x86_64/extract.erofs -x -i build/{project}/target/system_ext_a.img -o build/{project}/target/system_ext
+sudo bin/linux/x86_64/extract.erofs -x -i build/{project}/target/odm_a.img -o build/{project}/target/odm
+sudo bin/linux/x86_64/extract.erofs -x -i build/{project}/target/vendor_dlkm_a.img -o build/{project}/target/vendor_dlkm
+sudo bin/linux/x86_64/extract.erofs -x -i build/{project}/target/mi_ext_a.img -o build/{project}/target/mi_ext
 ```
 
 ### ⚠️ Step 1.5: 关键步骤 - 去掉 su 权限
@@ -79,7 +81,7 @@ sudo bin/linux/x86_64/extract.erofs -x -i build/target/mi_ext_a.img -o build/tar
 > **必须执行此步骤！否则后续 Agent 无法操作文件。**
 
 ```bash
-sudo chown -R $USER:$USER build/target/
+sudo chown -R $USER:$USER build/{project}/target/
 ```
 
 ---
@@ -91,15 +93,15 @@ sudo chown -R $USER:$USER build/target/
 ### Phase 2: 定位并删除应用
 
 Agent 将：
-1. 在 `build/target/product/product_a/data-app/` 或 `build/target/product/product_a/app/` 或 `build/target/product/product_a/priv-app/` 中定位目标应用
+1. 在 `build/{project}/target/product/product_a/data-app/` 或 `build/{project}/target/product/product_a/app/` 或 `build/{project}/target/product/product_a/priv-app/` 中定位目标应用
 2. 删除指定应用目录
 3. 验证删除成功
 
 ### Phase 3: 更新配置文件
 
 Agent 将更新以下配置文件：
-- `build/target/product/config/product_a_fs_config` - 删除相关条目
-- `build/target/product/config/product_a_file_contexts` - 删除 SELinux 上下文条目
+- `build/{project}/target/product/config/product_a_fs_config` - 删除相关条目
+- `build/{project}/target/product/config/product_a_file_contexts` - 删除 SELinux 上下文条目
 
 如果应用在其他分区，Agent 会相应更新该分区的配置文件。
 
@@ -167,10 +169,10 @@ fastboot reboot
 
 ## 示例用法
 
-**用户**: "我要精简 ROM，删除讯飞输入法，ROM 路径是 roms/12su/thor_images_OS3.0.2.0.VLACNXM_15.0"
+**用户**: "我要精简 ROM，删除讯飞输入法，项目名是 12su，ROM 路径是 roms/12su/thor_images_OS3.0.2.0.VLACNXM_15.0"
 
 **Agent**:
-1. 提供 Phase 1 的解包命令（用户手动执行）
+1. 提供 Phase 1 的解包命令（用户手动执行，需包含 `--project 12su`）
 2. 等待用户确认"解包完成"
 3. 自动执行 Phase 2-4
 4. 输出精简后的线刷包
