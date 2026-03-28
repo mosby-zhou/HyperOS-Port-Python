@@ -39,6 +39,11 @@ def parse_args():
         "--stock", required=True, help="Path to Stock ROM (zip/payload/dir)"
     )
     parser.add_argument(
+        "--project",
+        required=True,
+        help="Project name, corresponds to roms/<project>/ directory"
+    )
+    parser.add_argument(
         "--port", required=False, help="Path to Port ROM (zip/payload/dir). If omitted, runs in Official Modification mode."
     )
     parser.add_argument(
@@ -113,13 +118,15 @@ def main():
     logger.info("=" * 70)
     logger.info("HyperOS Porting Tool v2.0")
     logger.info("=" * 70)
+    logger.info(f"Project:   {args.project}")
+    logger.info(f"ROM Source: roms/{args.project}/")
+    logger.info(f"Work Dir:   build/{args.project}/")
     logger.info(f"Stock ROM: {args.stock}")
     if is_official_modify:
         logger.info("Mode:      Official Modification")
     else:
         logger.info(f"Port ROM:  {args.port}")
     logger.info(f"KSU:       {args.ksu}")
-    logger.info(f"Work Dir:  {args.work_dir}")
     if args.phases:
         logger.info(f"Phases:    {', '.join(args.phases)}")
     logger.info("=" * 70)
@@ -148,7 +155,19 @@ def main():
         logger.info("Downloading EU Bundle...")
         args.eu_bundle = str(downloader.download(args.eu_bundle))
 
-    work_dir = Path(args.work_dir).resolve()
+    # Validate project directory exists in roms/
+    roms_dir = Path("roms").resolve()
+    project_dir = roms_dir / args.project
+    if not project_dir.exists():
+        available_projects = [d.name for d in roms_dir.iterdir() if d.is_dir()]
+        logger.error(f"Error: --project is required.")
+        logger.error(f"Project directory not found: roms/{args.project}/")
+        logger.error(f"Available projects in roms/:")
+        for p in available_projects:
+            logger.error(f"  - {p}")
+        sys.exit(1)
+
+    work_dir = Path(args.work_dir).resolve() / args.project
 
     if args.clean:
         clean_work_dir(work_dir)
