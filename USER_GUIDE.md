@@ -43,28 +43,50 @@ otatools/
 
 ---
 
-## 1.3 工具链准备
-
-工具会在首次运行时自动下载 `otatools`，包含所有必要的二进制工具：
-
-```
-otatools/
-├── bin/           # 可执行文件
-│   ├── payload-dumper
-│   ├── lpunpack
-│   ├── mkfs.erofs
-│   └── ...
-├── lib64/         # 动态库
-└── security/      # 签名密钥
-```
-
-如果你 fork 了本项目，需要自行准备工具链，请参考 [第 14 章：工具链获取指南](#14-工具链获取指南)。
+如果你 fork 了本项目，需要自行准备工具链，请参考 [第 15 章：工具链获取指南](#15-工具链获取指南)。
 
 ---
 
-## 2. 基本使用
+## 2. 项目隔离机制
 
-### 2.1 标准移植模式
+本工具支持多 ROM 项目并行处理，通过 `--project` 参数实现项目隔离。
+
+### 2.1 目录结构对应关系
+
+```
+roms/                           # ROM 源文件目录
+├── 12su/                       # 项目目录
+│   ├── xxx_images_.../         # 已解压的 ROM
+│   └── xxx.tgz                 # ROM 压缩包
+└── 17u/
+    └── ...
+
+build/                          # 工作目录
+├── 12su/                       # 对应 roms/12su/ 的工作目录
+│   ├── stockrom/
+│   ├── portrom/
+│   └── target/
+└── 17u/                        # 对应 roms/17u/ 的工作目录
+    └── ...
+```
+
+### 2.2 使用示例
+
+```bash
+# 处理 12su 项目
+sudo python3 main.py --project 12su --stock roms/12su/xxx.tgz
+
+# 处理 17u 项目
+sudo python3 main.py --project 17u --stock roms/17u/xxx.tgz --port roms/17u/yyy.zip
+```
+
+> **重要：** `--project` 为必填参数。项目名必须对应 `roms/` 目录下的子目录名称。
+
+---
+
+## 3. 基本使用
+
+### 3.1 标准移植模式
 
 将移植包 ROM 移植到底包设备：
 
@@ -77,29 +99,31 @@ sudo python3 main.py --stock <底包路径> --port <移植包路径>
 ```bash
 # 将小米 14 ROM 移植到小米 13
 sudo python3 main.py \
+    --project fuxi \
     --stock fuxi_hyperos_2.0.zip \
     --port shennong_hyperos_3.0.zip
 ```
 
-### 2.2 官改模式
+### 3.2 官改模式
 
 仅修改原厂 ROM，无需移植包：
 
 ```bash
-sudo python3 main.py --stock <底包路径>
+sudo python3 main.py --project <项目名> --stock <底包路径>
 ```
 
 **示例**:
 
 ```bash
-# 官改小米 13 ROM，启用 Wild Boost
-sudo python3 main.py --stock fuxi_hyperos_2.0.zip
+# 官改小米 13 ROM
+sudo python3 main.py --project fuxi --stock fuxi_hyperos_2.0.zip
 ```
 
-### 2.3 参数详解
+### 3.3 参数详解
 
 | 参数          | 必需 | 默认值  | 说明                                           |
 | ------------- | ---- | ------- | ---------------------------------------------- |
+| `--project`   | ✅   | -       | 项目名称，对应 `roms/<project>/` 目录          |
 | `--stock`     | ✅   | -       | 底包 ROM 路径 (ZIP/目录)                       |
 | `--port`      | ❌   | -       | 移植包 ROM 路径。省略则进入官改模式            |
 | `--pack-type` | ❌   | payload | 输出格式: `payload` 或 `super`                 |
@@ -113,9 +137,9 @@ sudo python3 main.py --stock fuxi_hyperos_2.0.zip
 
 ---
 
-## 3. 输出格式选择
+## 4. 输出格式选择
 
-### 3.1 Payload 模式 (推荐)
+### 4.1 Payload 模式 (推荐)
 
 适用于 Recovery/OTA 刷入：
 
@@ -132,7 +156,7 @@ out/
     └── META-INF/
 ```
 
-### 3.2 Super 模式
+### 4.2 Super 模式
 
 适用于 Fastboot/混合刷入：
 
@@ -153,9 +177,9 @@ out/
 
 ---
 
-## 4. 功能配置
+## 5. 功能配置
 
-### 4.1 启用 Wild Boost
+### 5.1 启用 Wild Boost
 
 **方法一：设备配置**
 
@@ -173,7 +197,7 @@ out/
 
 Wild Boost 目前需要通过配置文件启用。
 
-### 4.2 启用 KernelSU
+### 5.2 启用 KernelSU
 
 **方法一：CLI 参数**
 
@@ -191,7 +215,7 @@ sudo python3 main.py --stock stock.zip --ksu
 }
 ```
 
-### 4.3 EU 本地化
+### 5.3 EU 本地化
 
 为 Global/EU 底包恢复中国区功能：
 
@@ -213,9 +237,9 @@ sudo python3 main.py \
 
 ---
 
-## 5. 分阶段执行
+## 6. 分阶段执行
 
-### 5.1 仅执行特定阶段
+### 6.1 仅执行特定阶段
 
 ```bash
 # 仅执行系统级修改
@@ -231,7 +255,7 @@ sudo python3 main.py --stock stock.zip --phases system,apk
 sudo python3 main.py --stock stock.zip --phases repack
 ```
 
-### 5.2 阶段说明
+### 6.2 阶段说明
 
 | 阶段      | 功能                                | 耗时       |
 | --------- | ----------------------------------- | ---------- |
@@ -243,9 +267,9 @@ sudo python3 main.py --stock stock.zip --phases repack
 
 ---
 
-## 6. 设备配置
+## 7. 设备配置
 
-### 6.1 添加新设备支持
+### 7.1 添加新设备支持
 
 **步骤一：创建设备目录**
 
@@ -296,7 +320,7 @@ mkdir -p devices/<device>/override/product/app/MyApp
 # 复制需要替换的文件到 override 目录
 ```
 
-### 6.2 配置文件详解
+### 7.2 配置文件详解
 
 #### config.json - 设备配置
 
@@ -331,9 +355,9 @@ mkdir -p devices/<device>/override/product/app/MyApp
 
 ---
 
-## 7. 高级用法
+## 8. 高级用法
 
-### 7.1 使用 URL 下载 ROM
+### 8.1 使用 URL 下载 ROM
 
 ```bash
 sudo python3 main.py \
@@ -341,7 +365,7 @@ sudo python3 main.py \
     --port https://example.com/port.zip
 ```
 
-### 7.2 自定义工作目录
+### 8.2 自定义工作目录
 
 ```bash
 sudo python3 main.py \
@@ -350,7 +374,7 @@ sudo python3 main.py \
     --clean
 ```
 
-### 7.3 调试模式
+### 8.3 调试模式
 
 ```bash
 sudo python3 main.py --stock stock.zip --debug
@@ -358,7 +382,7 @@ sudo python3 main.py --stock stock.zip --debug
 
 日志输出到 `porting.log` 和控制台。
 
-### 7.4 增量处理
+### 8.4 增量处理
 
 工具会自动检测源文件变化：
 
@@ -367,9 +391,9 @@ sudo python3 main.py --stock stock.zip --debug
 
 ---
 
-## 8. 常见问题排查
+## 9. 常见问题排查
 
-### 8.1 工具链问题
+### 9.1 工具链问题
 
 **问题**: `payload-dumper: command not found`
 
@@ -383,7 +407,7 @@ ls otatools/bin/
 python3 -c "from src.utils.otatools_manager import OtaToolsManager; OtaToolsManager().download_otatools()"
 ```
 
-### 8.2 权限问题
+### 9.2 权限问题
 
 **问题**: `Permission denied` 错误
 
@@ -397,7 +421,7 @@ sudo python3 main.py --stock stock.zip
 sudo chown -R $USER:$USER build/
 ```
 
-### 8.3 磁盘空间不足
+### 9.3 磁盘空间不足
 
 **问题**: `No space left on device`
 
@@ -411,7 +435,7 @@ rm -rf build/
 sudo python3 main.py --stock stock.zip --work-dir /mnt/external/work
 ```
 
-### 8.4 ROM 类型识别失败
+### 9.4 ROM 类型识别失败
 
 **问题**: `Unknown ROM type`
 
@@ -425,7 +449,7 @@ unzip -l ROM.zip | head -20
 # 目前工具会自动检测，如遇问题请提 Issue
 ```
 
-### 8.5 打包失败
+### 9.5 打包失败
 
 **问题**: `Failed to pack partition`
 
@@ -439,9 +463,9 @@ sudo python3 main.py --stock stock.zip --fs-type ext4
 
 ---
 
-## 9. 输出文件说明
+## 10. 输出文件说明
 
-### 9.1 OTA 模式输出
+### 10.1 OTA 模式输出
 
 ```
 out/<device>-ota_full-<version>-<date>-<md5>-<android>.zip
@@ -457,7 +481,7 @@ out/<device>-ota_full-<version>-<date>-<md5>-<android>.zip
 
 **刷入方式**: Recovery 模式 → Apply update → Select from storage
 
-### 9.2 Hybrid 模式输出
+### 10.2 Hybrid 模式输出
 
 ```
 out/<device>-hybrid-<version>-<date>.zip
@@ -483,9 +507,9 @@ out/<device>-hybrid-<version>-<date>.zip
 
 ---
 
-## 10. 最佳实践
+## 11. 最佳实践
 
-### 10.1 移植前检查清单
+### 11.1 移植前检查清单
 
 - [ ] 确认底包设备代号
 - [ ] 确认移植包 Android 版本兼容
@@ -494,7 +518,7 @@ out/<device>-hybrid-<version>-<date>.zip
 - [ ] 确认磁盘空间充足
 - [ ] 阅读目标设备的已知问题
 
-### 10.2 推荐工作流程
+### 11.2 推荐工作流程
 
 ```
 1. 首次移植
@@ -513,7 +537,7 @@ out/<device>-hybrid-<version>-<date>.zip
    └── 全面功能测试
 ```
 
-### 10.3 性能优化建议
+### 11.3 性能优化建议
 
 1. **使用 SSD**: 大幅提升解包/打包速度
 2. **增加内存**: 减少交换分区使用
@@ -522,9 +546,9 @@ out/<device>-hybrid-<version>-<date>.zip
 
 ---
 
-## 11. 扩展开发
+## 12. 扩展开发
 
-### 11.1 编写自定义插件
+### 12.1 编写自定义插件
 
 ```python
 # devices/<device>/plugins/my_plugin.py
@@ -554,7 +578,7 @@ class MyCustomPlugin(ModifierPlugin):
         return True
 ```
 
-### 11.2 添加新的 ROM 格式支持
+### 12.2 添加新的 ROM 格式支持
 
 在 `src/core/rom/extractors.py` 中添加新的提取函数：
 
@@ -566,9 +590,9 @@ def extract_new_format(package: RomPackage, partitions: Optional[List[str]]) -> 
 
 ---
 
-## 12. Super 分区大小限制与原理
+## 13. Super 分区大小限制与原理
 
-### 12.1 概念说明
+### 13.1 概念说明
 
 Android 10+ 使用 **动态分区 (Dynamic Partition)** 架构，`super` 是一个物理分区，内部包含多个逻辑分区：
 
@@ -587,7 +611,7 @@ super (物理分区，固定大小)
 └── mi_ext_a / mi_ext_b
 ```
 
-### 12.2 大小限制层级
+### 13.2 大小限制层级
 
 | 层级       | 说明               | 限制来源         |
 | ---------- | ------------------ | ---------------- |
@@ -597,7 +621,7 @@ super (物理分区，固定大小)
 
 **关键规则**：所有逻辑分区大小之和 ≤ 逻辑分区组上限 ≤ super 物理大小
 
-### 12.3 查看分区信息
+### 13.3 查看分区信息
 
 **方法一：查看 rawprogram0.xml**
 
@@ -658,7 +682,7 @@ Maximum size: 8589934592 bytes
 ------------------------
 ```
 
-### 12.4 大小计算方法
+### 13.4 大小计算方法
 
 **扇区大小说明**：
 
@@ -673,7 +697,7 @@ system_a:  1484624 sectors × 512 bytes = 760,127,488 bytes ≈ 725 MB
 vendor_a:  3760568 sectors × 512 bytes = 1,925,410,816 bytes ≈ 1.8 GB
 ```
 
-### 12.5 验证大小是否合规
+### 13.5 验证大小是否合规
 
 **验证脚本**：
 
@@ -689,7 +713,7 @@ ls -l build/target/*_a.img | awk '{sum+=$5} END {print "总大小:", sum/1024/10
 - 逻辑分区总和 ≤ qti_dynamic_partitions_a 最大值 (8 GB)
 - 逻辑分区总和 ≤ super 物理大小 (8.5 GB)
 
-### 12.6 常见设备 super 大小
+### 13.6 常见设备 super 大小
 
 | 设备                  | super 大小 | 逻辑分区组上限 |
 | --------------------- | ---------- | -------------- |
@@ -699,7 +723,7 @@ ls -l build/target/*_a.img | awk '{sum+=$5} END {print "总大小:", sum/1024/10
 
 > 注意：具体大小请以设备实际的 rawprogram0.xml 或 lpdump 输出为准。
 
-### 12.7 打包失败排查
+### 13.7 打包失败排查
 
 **问题**：`lpmake: partition would exceed group size`
 
@@ -733,7 +757,7 @@ bin/linux/x86_64/android-lptools-static-x86_64/lpdump super_raw.img
 ls -l *.img
 ```
 
-### 12.8 精简后空间释放
+### 13.8 精简后空间释放
 
 删除应用后，product 分区变小，释放的空间：
 
@@ -750,11 +774,11 @@ ls -l *.img
 
 ---
 
-## 14. 工具链获取指南
+## 15. 工具链获取指南
 
 本节介绍如何从各种来源获取项目所需的工具链。如果你 fork 了本项目或需要手动准备工具，请参考以下内容。
 
-### 14.1 Google Android CI（官方推荐）
+### 15.1 Google Android CI（官方推荐）
 
 Google 在 [ci.android.com](https://ci.android.com) 提供官方预构建工具，这是获取工具链的首选方式。
 
@@ -818,7 +842,7 @@ cvd-host_package/
 └── lib64/
 ```
 
-### 14.2 分区工具（lpmake/lpunpack）
+### 15.2 分区工具（lpmake/lpunpack）
 
 如果只需要分区工具，可以从以下 GitHub 仓库获取预构建版本：
 
@@ -838,7 +862,7 @@ cvd-host_package/
 | `lpflash`  | 将 super.img 写入块设备            |
 | `lpdump`   | 查看 super.img 分区布局和 metadata |
 
-### 14.3 EROFS 文件系统工具
+### 15.3 EROFS 文件系统工具
 
 现代 Android (HyperOS/MIUI) 使用 EROFS 文件系统。
 
@@ -875,7 +899,7 @@ sudo make install
 | `dump.erofs` | 分析 EROFS 镜像结构     |
 | `erofsfuse`  | 挂载 EROFS 镜像（FUSE） |
 
-### 14.4 Payload 工具
+### 15.4 Payload 工具
 
 用于解包 OTA 的 `payload.bin` 文件。
 
@@ -892,7 +916,7 @@ pip install protobuf brotli
 # 或使用 payload-dumper-go 预构建版本
 ```
 
-### 14.5 从 AOSP 本地构建
+### 15.5 从 AOSP 本地构建
 
 如果你有 AOSP 编译环境，可以自己构建工具：
 
@@ -906,7 +930,7 @@ make dist
 # 输出: out/dist/otatools.zip
 ```
 
-### 14.6 组合工具链
+### 15.6 组合工具链
 
 本项目的 `otatools` 目录是以下工具的组合：
 
@@ -930,7 +954,7 @@ otatools/
     └── dump.erofs
 ```
 
-### 14.7 快速设置脚本
+### 15.7 快速设置脚本
 
 创建你自己的 otatools 目录：
 
@@ -956,7 +980,7 @@ chmod +x otatools/bin/*
 echo "otatools 设置完成！"
 ```
 
-### 14.8 工具清单
+### 15.8 工具清单
 
 项目运行所需的完整工具列表：
 
@@ -975,7 +999,7 @@ echo "otatools 设置完成！"
 | `unpack_bootimg` | 解包 boot 镜像      | otatools.zip                       |
 | `mkbootimg`      | 创建 boot 镜像      | otatools.zip                       |
 
-### 14.9 常见问题
+### 15.9 常见问题
 
 **Q: 为什么不把工具打包到仓库中？**
 
@@ -991,7 +1015,7 @@ A: 大部分工具是 Linux x86_64 二进制文件。Windows 用户需要使用 
 
 ---
 
-## 15. 获取帮助
+## 16. 获取帮助
 
 - **GitHub Issues**: 报告问题和功能请求
 - **项目文档**: 查看 `docs/` 目录
