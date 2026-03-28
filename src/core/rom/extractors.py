@@ -8,6 +8,8 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional
 
+from src.utils.shell import ToolNotFoundError
+
 if TYPE_CHECKING:
     from .package import RomPackage
 
@@ -22,7 +24,14 @@ def extract_payload(
         package: The RomPackage instance.
         partitions: List of partitions to extract (None = all).
     """
-    cmd = ["payload-dumper", "--out", str(package.images_dir)]
+    # Get payload-dumper path
+    try:
+        payload_dumper = package.shell.get_binary_path("payload-dumper", required=True)
+    except ToolNotFoundError as e:
+        package.logger.error(f"payload-dumper not found: {e}")
+        raise
+
+    cmd = [str(payload_dumper), "--out", str(package.images_dir)]
 
     if partitions:
         package.logger.info(f"[{package.label}] Extracting specific images: {partitions} ...")
@@ -31,7 +40,7 @@ def extract_payload(
         package.logger.info(f"[{package.label}] Extracting ALL images (Firmware + Logical) ...")
 
     cmd.append(str(package.path))
-    package.shell.run(cmd)
+    package.shell.run(cmd, tool_required=False)
 
 
 def extract_brotli(
@@ -85,8 +94,12 @@ def extract_brotli(
         # 3. Brotli Decompress
         package.logger.info(f"[{package.label}] Decompressing {br_file.name}...")
         try:
-            cmd = ["brotli", "-d", "-f", str(br_file), "-o", str(new_dat)]
-            package.shell.run(cmd)
+            brotli_bin = package.shell.get_binary_path("brotli", required=True)
+            cmd = [str(brotli_bin), "-d", "-f", str(br_file), "-o", str(new_dat)]
+            package.shell.run(cmd, tool_required=False)
+        except ToolNotFoundError as e:
+            package.logger.error(f"brotli not found: {e}")
+            continue
         except Exception as e:
             package.logger.error(f"Brotli decompression failed for {prefix}: {e}")
             continue
@@ -154,6 +167,13 @@ def extract_fastboot(
                 f"[{package.label}] Found super.img, unpacking logical partitions..."
             )
 
+            # Get lpunpack path
+            try:
+                lpunpack_bin = package.shell.get_binary_path("lpunpack", required=True)
+            except ToolNotFoundError as e:
+                package.logger.error(f"lpunpack not found: {e}")
+                raise
+
             try:
                 if partitions:
                     package.logger.info(
@@ -163,8 +183,8 @@ def extract_fastboot(
                         # Try standard lpunpack first
                         success = True
                         try:
-                            cmd = ["lpunpack", "-p", part, str(super_img), str(package.images_dir)]
-                            package.shell.run(cmd)
+                            cmd = [str(lpunpack_bin), "-p", part, str(super_img), str(package.images_dir)]
+                            package.shell.run(cmd, tool_required=False)
                         except Exception:
                             package.logger.warning(f"[{package.label}] lpunpack failed for {part}, trying lpunpack.py...")
                             try:
@@ -177,8 +197,8 @@ def extract_fastboot(
                         if success:
                             # Try suffix _a if needed (for AB devices)
                             try:
-                                cmd_a = ["lpunpack", "-p", f"{part}_a", str(super_img), str(package.images_dir)]
-                                package.shell.run(cmd_a)
+                                cmd_a = [str(lpunpack_bin), "-p", f"{part}_a", str(super_img), str(package.images_dir)]
+                                package.shell.run(cmd_a, tool_required=False)
                             except Exception:
                                 # Not always an error if _a doesn't exist
                                 pass
@@ -187,7 +207,7 @@ def extract_fastboot(
                         f"[{package.label}] Unpacking ALL partitions from super.img..."
                     )
                     try:
-                        package.shell.run(["lpunpack", str(super_img), str(package.images_dir)])
+                        package.shell.run([str(lpunpack_bin), str(super_img), str(package.images_dir)], tool_required=False)
                     except Exception:
                         package.logger.warning(f"[{package.label}] lpunpack failed, trying lpunpack.py...")
                         cmd_py = [sys.executable, "src/utils/lpunpack.py", str(super_img), str(package.images_dir)]
