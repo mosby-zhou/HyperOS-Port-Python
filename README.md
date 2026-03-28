@@ -87,18 +87,20 @@ Prepare your Stock ROM and Port ROM ZIP files (or just Stock ROM for Official Mo
 
 **OTA/Recovery Mode (Default):**
 ```bash
-sudo python3 main.py --stock <path_to_stock_zip> --port <path_to_port_zip>
+sudo python3 main.py --project <project_name> --stock <path_to_stock_zip> --port <path_to_port_zip>
 ```
 
 **Official Modification Mode (Modify Stock ROM only):**
 ```bash
-sudo python3 main.py --stock <path_to_stock_zip>
+sudo python3 main.py --project <project_name> --stock <path_to_stock_zip>
 ```
 
 **Hybrid/Fastboot Mode (Super Image):**
 ```bash
-sudo python3 main.py --stock <path_to_stock_zip> --port <path_to_port_zip> --pack-type super
+sudo python3 main.py --project <project_name> --stock <path_to_stock_zip> --port <path_to_port_zip> --pack-type super
 ```
+
+> **Note:** `--project` is required. The project name corresponds to `roms/<project_name>/` directory.
 
 ---
 
@@ -108,6 +110,7 @@ sudo python3 main.py --stock <path_to_stock_zip> --port <path_to_port_zip> --pac
 
 | Argument | Description | Default |
 | :--- | :--- | :--- |
+| `--project` | **(Required)** Project name, corresponds to `roms/<project>/` | N/A |
 | `--stock` | **(Required)** Path to the Stock ROM (Base) | N/A |
 | `--port` | **(Optional)** Path to the Port ROM. If omitted, tool runs in **Official Modification mode**. | N/A |
 | `--pack-type` | Output format: `payload` or `super` | from config |
