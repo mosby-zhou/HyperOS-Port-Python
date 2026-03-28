@@ -59,3 +59,5 @@ mk_erofs.sh
 temp/
 .omg/
 .docs/
+
+bin/offical
