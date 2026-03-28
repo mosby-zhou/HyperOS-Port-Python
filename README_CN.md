@@ -86,18 +86,20 @@ ruff check src/
 
 **OTA/Recovery 模式 (默认):**
 ```bash
-sudo python3 main.py --stock <底包路径> --port <移植包路径>
+sudo python3 main.py --project <项目名> --stock <底包路径> --port <移植包路径>
 ```
 
 **官改模式 (仅修改底包):**
 ```bash
-sudo python3 main.py --stock <底包路径>
+sudo python3 main.py --project <项目名> --stock <底包路径>
 ```
 
 **Hybrid/Fastboot 模式 (Super Image):**
 ```bash
-sudo python3 main.py --stock <底包路径> --port <移植包路径> --pack-type super
+sudo python3 main.py --project <项目名> --stock <底包路径> --port <移植包路径> --pack-type super
 ```
+
+> **注意：** `--project` 为必填参数。项目名对应 `roms/<项目名>/` 目录。
 
 ---
 
@@ -107,6 +109,7 @@ sudo python3 main.py --stock <底包路径> --port <移植包路径> --pack-type
 
 | 参数 | 说明 | 默认值 |
 | :--- | :--- | :--- |
+| `--project` | **(必填)** 项目名称，对应 `roms/<project>/` 目录 | 无 |
 | `--stock` | **(必需)** 底包 (Stock ROM) 路径 | 无 |
 | `--port` | **(可选)** 移植包 (Port ROM) 路径。如果省略，则运行 **官改模式**。 | 无 |
 | `--pack-type` | 打包格式: `payload` 或 `super` | `payload` |
