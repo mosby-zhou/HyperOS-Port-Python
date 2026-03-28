@@ -42,6 +42,7 @@ class PortingContext:
     def _init_tools(self) -> None:
         """
         Auto-detect system environment and set global tool paths.
+        Uses official tools directory (bin/offical/) as primary source.
         """
         system: str = platform.system().lower()  # windows, linux, darwin
         machine: str = platform.machine().lower()  # x86_64, amd64, aarch64, arm64
@@ -69,31 +70,59 @@ class PortingContext:
             plat_dir = "linux"
             exe_ext = ""
 
-        # 3. Set platform specific bin directory (e.g. bin/linux/x86_64)
-        self.platform_bin_dir: Path = self.bin_root / plat_dir / arch
+        # 3. Set official binary directory (primary)
+        self.official_bin_dir: Path = self.bin_root / "offical" / plat_dir / arch
+        self.platform_bin_dir: Path = self.official_bin_dir  # Alias for compatibility
 
-        if not self.platform_bin_dir.exists():
-            # Try fallback to bin/linux
-            fallback: Path = self.bin_root / plat_dir
-            if fallback.exists():
-                self.platform_bin_dir = fallback
+        if not self.official_bin_dir.exists():
+            self.logger.error(f"Official binary directory not found: {self.official_bin_dir}")
+            raise FileNotFoundError(
+                f"Official tools directory not found: {self.official_bin_dir}\n"
+                f"Please ensure all required tools are placed in bin/offical/{plat_dir}/{arch}/"
+            )
 
-        self.logger.info(f"Platform Binary Dir: {self.platform_bin_dir}")
+        self.logger.info(f"Official Binary Dir: {self.official_bin_dir}")
 
         # 4. Define global tools (self.tools)
         self.tools: SimpleNamespace = SimpleNamespace()
 
-        # >> Native tools
-        self.tools.magiskboot = self.platform_bin_dir / f"magiskboot{exe_ext}"
-        self.tools.aapt2 = self.platform_bin_dir / f"aapt2{exe_ext}"
+        # >> Native tools from official directory
+        self.tools.magiskboot = self.official_bin_dir / f"magiskboot{exe_ext}"
+        self.tools.aapt2 = self.official_bin_dir / f"aapt2{exe_ext}"
 
-        # >> Java tools
-        self.tools.apktool_jar = self.bin_root / "apktool" / "apktool_2.12.1.jar"  # Example
+        # >> LPTOOLS (may be in subdirectory)
+        lptools_dir = self.official_bin_dir / f"android-lptools-static-{arch}"
+        if lptools_dir.exists():
+            self.tools.lpmake = lptools_dir / "lpmake"
+            self.tools.lpunpack = lptools_dir / "lpunpack"
+            self.tools.lpdump = lptools_dir / "lpdump"
+        else:
+            # Fallback to main directory
+            self.tools.lpmake = self.official_bin_dir / "lpmake"
+            self.tools.lpunpack = self.official_bin_dir / "lpunpack"
+            self.tools.lpdump = self.official_bin_dir / "lpdump"
+
+        # >> Java tools (still in bin/)
+        self.tools.apktool_jar = self.bin_root / "apktool" / "apktool_2.12.1.jar"
         self.tools.apkeditor_jar = self.bin_root / "APKEditor.jar"
 
-        # Check critical tools
-        if not self.tools.magiskboot.exists():
-            self.logger.warning(f"magiskboot not found at {self.tools.magiskboot}")
+        # 5. Verify critical tools exist
+        critical_tools = [
+            ("magiskboot", self.tools.magiskboot),
+            ("aapt2", self.tools.aapt2),
+        ]
+
+        missing_tools = []
+        for name, path in critical_tools:
+            if not path.exists():
+                missing_tools.append(f"{name}: {path}")
+
+        if missing_tools:
+            raise FileNotFoundError(
+                f"Critical tools not found in {self.official_bin_dir}:\n"
+                + "\n".join(f"  - {m}" for m in missing_tools)
+                + "\nPlease download missing tools and place them in the official directory."
+            )
 
     def initialize_target(self) -> None:
         """
